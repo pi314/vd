@@ -13,7 +13,20 @@ import sys
 import tempfile
 import collections
 
-from os.path import basename, join, exists, isdir
+from os.path import basename, join, exists, isdir, relpath
+
+
+class RegexCache:
+    def __init__(self, text):
+        self.text = text
+        self.m = None
+
+    def match(self, regex):
+        self.m = re.match(regex, self.text)
+        return self.m
+
+    def group(self, *args, **kwargs):
+        return self.m.group(*args, **kwargs)
 
 
 def color_to(color_code):
@@ -74,33 +87,58 @@ def diff_stages(stage_current, stage_new):
 
 
 def prompt_to_vim(stage_current):
-    with tempfile.NamedTemporaryFile(mode='w', encoding='utf8', prefix='vd', suffix='vd') as tf:
-        # Write current content into tempfile
-        for idx, fpath in stage_current.items():
-            tf.write('{idx}\t{dot_slash}{fpath}{trailing_slash}\n'.format(
-                idx=idx,
-                dot_slash='./' if not fpath.startswith(('/', './')) else '',
-                fpath=fpath,
-                trailing_slash='/' if isdir(fpath) else '',
-                ))
-        tf.flush()
+    while True:
+        with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
 
-        # Invoke vim to edit item list
-        sub.call(['vim', tf.name, '+set nonu', '+set syntax=python', '+set tabstop=8'], stdin=open('/dev/tty'))
+            # Write current stage into tempfile
+            with open(tf.name, mode='w', encoding='utf8') as f:
+                for idx, fpath in stage_current.items():
+                    f.write('{idx}\t{dot_slash}{fpath}{trailing_slash}\n'.format(
+                        idx=idx,
+                        dot_slash='./' if not fpath.startswith(('/', './')) else '',
+                        fpath=fpath,
+                        trailing_slash='/' if isdir(fpath) else '',
+                        ))
+                f.flush()
 
-        stage_new = collections.OrderedDict()
-        with open(tf.name, mode='r', encoding='utf8') as f:
-            for line in f:
-                line = line.rstrip('\n')
-                m = re.match(r'^(#?)(\d+)\t(.*)$', line)
-                #TODO: handle incorrect formatted lines
-                idx, item = m.group(2), m.group(3)
-                stage_new[idx] = item.rstrip('/')
+            # Invoke vim to edit item list
+            sub.call(['vim', tf.name, '+set nonu', '+set syntax=python', '+set tabstop=8'], stdin=open('/dev/tty'))
 
-        return stage_new
+            # Parse tempfile and retrieve new stage content
+            stage_new = collections.OrderedDict()
+            has_parse_error = False
+            with open(tf.name, mode='r', encoding='utf8') as f:
+                for linenum, line in enumerate(f, start=1):
+                    line = line.rstrip('\n')
+
+                    if not line:
+                        continue
+
+                    rec = RegexCache(line)
+
+                    if rec.match(r'^(#?\d+)\t(?:./)?(.*)$'):
+                        idx, item = rec.group(1), rec.group(2)
+                        stage_new[idx] = item.rstrip('/')
+
+                    else:
+                        error('Parsing error at line {}: {}'.format(linenum, red(line)))
+                        has_parse_error = True
+
+            if has_parse_error:
+                user_confirm = prompt_confirm('Re-edit?', ['edit', 'quit'])
+                if user_confirm == 'e':
+                    continue
+
+                exit(1)
+
+        break
+
+    return stage_new
 
 
-def prompt_confirm():
+def prompt_confirm(prompt_text, options):
+    options = list(options)
+
     stdin_backup = sys.stdin
     stdout_backup = sys.stdout
     stderr_backup = sys.stderr
@@ -112,14 +150,19 @@ def prompt_confirm():
     try:
         user_confirm = None
 
+        options[0] = options[0][0].upper() + options[0][1:]
+
         while user_confirm is None:
-            print_stderr('Continue? [(Y)es / (e)dit / (r)edo / (q)uit]', end=' ')
+            print_stderr(prompt_text + ' '
+                    + '['
+                    + ' / '.join('({}){}'.format(o[0], o[1:]) for o in options)
+                    + ']', end=' ')
             user_confirm = input().strip().lower()
 
             if not user_confirm:
-                user_confirm = 'y'
+                user_confirm = options[0][0].lower()
 
-            if user_confirm not in 'yerq':
+            if user_confirm not in [o[0].lower() for o in options]:
                 user_confirm = None
                 continue
 
@@ -181,10 +224,12 @@ def main():
             continue
 
         if expand and isdir(target):
-            inventory += [join(target, i) for i in sorted(os.listdir(target))]
+            inventory += [relpath(join(target, i)) for i in sorted(os.listdir(target))]
 
         else:
-            inventory.append(target.rstrip('/'))
+            inventory.append(relpath(target))
+
+    inventory = [i[2:] if i.startswith('./') else i for i in inventory]
 
     if has_error:
         exit(1)
@@ -218,7 +263,7 @@ def main():
 
         # Just for testing
         if (not inventory_new) or (inventory == inventory_new):
-            user_confirm = prompt_confirm()
+            user_confirm = prompt_confirm('Continue?', ('yes', 'edit', 'redo', 'quit'))
             if user_confirm in 'yq':
                 break
 
