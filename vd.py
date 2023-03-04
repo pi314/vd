@@ -116,12 +116,17 @@ def prompt_to_vim(stage_current):
 
                     rec = RegexCache(line)
 
-                    if rec.match(r'^(#?\d+)\t(?:./)?(.*)$'):
+                    if rec.match(r'^(#?\d+)\t(.*)$'):
                         idx, item = rec.group(1), rec.group(2)
-                        stage_new[idx] = item.rstrip('/')
+                        if not item:
+                            error('Line {}: file path cannot be empty'.format(linenum))
+                            has_parse_error = True
+
+                        else:
+                            stage_new[idx] = item.rstrip('/')
 
                     else:
-                        error('Parsing error at line {}: {}'.format(linenum, red(line)))
+                        error('Line {}, parsing error: {}'.format(linenum, red(line)))
                         has_parse_error = True
 
             if has_parse_error:
