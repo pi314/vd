@@ -87,11 +87,11 @@ def stage_to_inventory(stage):
     return list(stage.values())
 
 
-def diff_stages(stage_current, stage_new):
-    ret = set()
+def diff_stages(stage_now, stage_new):
+    ret = []
 
     debug('stage current')
-    for idx, fpath in stage_current.items():
+    for idx, fpath in stage_now.items():
         debug(idx, fpath)
 
     debug()
@@ -99,22 +99,27 @@ def diff_stages(stage_current, stage_new):
     for idx, fpath in stage_new.items():
         debug(idx, fpath)
 
-    for idx in stage_current:
+    for idx in stage_now:
         if idx not in stage_new:
-            ret.add(('remove', stage_current[idx]))
-        elif stage_current[idx] != stage_new[idx]:
-            ret.add(('rename', stage_current[idx], stage_new[str(idx)]))
+            ret.append(('remove', stage_now[idx]))
+        elif stage_now[idx] != stage_new[idx]:
+            ret.append(('rename', stage_now[idx], stage_new[str(idx)]))
 
     return ret
 
 
-def user_edit_stage(stage_current):
+def print_op_list(op_list):
+    for op in op_list:
+        print(op)
+
+
+def user_edit_stage(stage_now):
     while True:
         with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
 
             # Write current stage into tempfile
             with open(tf.name, mode='w', encoding='utf8') as f:
-                for idx, fpath in stage_current.items():
+                for idx, fpath in stage_now.items():
                     f.write('{idx}\t{dot_slash}{fpath}{trailing_slash}\n'.format(
                         idx=idx,
                         dot_slash='./' if not fpath.startswith(('/', './')) else '',
@@ -159,7 +164,7 @@ def user_edit_stage(stage_current):
 
             if has_parse_error:
                 user_confirm = prompt_confirm('Edit again?', ['edit', 'quit'])
-                if user_confirm == 'e':
+                if user_confirm == 'edit':
                     continue
 
                 exit(1)
@@ -169,13 +174,30 @@ def user_edit_stage(stage_current):
     return stage_new
 
 
+class UserConfirm:
+    def __init__(self, options):
+        self.options = options.copy()
+        self.selected = None
+
+    def __eq__(self, other):
+        if other not in self.options:
+            raise ValueError('Invalid option: ' + other)
+
+        return self.selected == other
+
+
 def prompt_confirm(prompt_text, options):
-    options = list(options)
+    options = [o.lower() for o in options]
+
+    uc = UserConfirm(options)
+
+    options_abbr_map = dict()
+    options_abbr_map.update({o[0] : o for o in options})
+    options_abbr_map.update({o[0].upper() : o for o in options})
 
     stdin_backup = sys.stdin
     stdout_backup = sys.stdout
     stderr_backup = sys.stderr
-
     sys.stdin = open('/dev/tty')
     sys.stdout = open('/dev/tty', 'w')
     sys.stderr = open('/dev/tty', 'w')
@@ -195,7 +217,7 @@ def prompt_confirm(prompt_text, options):
             if not user_confirm:
                 user_confirm = options[0][0].lower()
 
-            if user_confirm not in [o[0].lower() for o in options]:
+            if user_confirm not in options_abbr_map:
                 user_confirm = None
                 continue
 
@@ -210,7 +232,9 @@ def prompt_confirm(prompt_text, options):
     sys.stdout = stdout_backup
     sys.stderr = stderr_backup
 
-    return user_confirm
+    uc.selected = options_abbr_map[user_confirm]
+
+    return uc
 
 
 def main():
@@ -279,19 +303,19 @@ def main():
     # 3. Parse and get new stage content
     # 4. Compare new/old stage content and generate OP list
     # 5. Confirm with user
-    # 5.y. if user say "y" (yes) or enter,
+    # 5.q. if user say "q" (quit), quit
     # 5.e. if user say "e" (edit), invoke vim with new stage content
     # 5.r. if user say "r" (redo), invoke vim with old stage content
-    # 5.q. if user say "q" (quit), quit
+    # 5.y. if user say "y" (yes) or enter, apply the OP list
     # 5.*. keep asking until recognized option is selected or Ctrl-C is pressed
-    # 6. Apply the OP list
+
+    stage_now = inventory_to_stage(inventory)
+    stage_new = stage_now.copy()
 
     while True:
-        stage_current = inventory_to_stage(inventory)
+        stage_new = user_edit_stage(stage_new)
 
-        stage_new = user_edit_stage(stage_current)
-
-        op_list = diff_stages(stage_current, stage_new)
+        op_list = diff_stages(stage_now, stage_new)
         for op in op_list:
             debug(op)
 
@@ -299,21 +323,25 @@ def main():
             info('No change')
             break
 
+        print_op_list(op_list)
+
         user_confirm = prompt_confirm('Continue?', ('yes', 'edit', 'redo', 'quit'))
-        if user_confirm in 'yq':
+        if user_confirm == 'quit':
             break
 
-        inventory_new = stage_to_inventory(stage_new)
+        if user_confirm == 'edit':
+            continue
 
-        #TODO: diff them and generate op list
-        debug('==')
-        for idx in sorted(stage_new.keys()):
-            debug('(', idx, stage_new[idx], ')')
+        if user_confirm == 'redo':
+            stage_new = stage_now
+            continue
+
+        inventory_new = stage_to_inventory(stage_new)
 
         # Just for testing
         if (not inventory_new) or (inventory == inventory_new):
             user_confirm = prompt_confirm('Continue?', ('yes', 'edit', 'redo', 'quit'))
-            if user_confirm in 'yq':
+            if user_confirm in ('yes', 'quit'):
                 break
 
         inventory = inventory_new
