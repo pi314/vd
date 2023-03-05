@@ -33,16 +33,17 @@ def color_to(color_code):
     def colorer(s):
         if not s:
             return ''
-        return '\033[3{}m{}\033[m'.format(color_code, s)
+        return '\033[{}m{}\033[m'.format(color_code, s)
     return colorer
 
-red = color_to(1)
-green = color_to(2)
-yellow = color_to(3)
-blue = color_to(4)
-magenta = color_to(5)
-cyan = color_to(6)
-white = color_to(7)
+black = color_to('38;2;22;22;29') # eigengrau, or brain gray
+red = color_to(31)
+green = color_to(32)
+yellow = color_to(33)
+blue = color_to(34)
+magenta = color_to(35)
+cyan = color_to(36)
+white = color_to(37)
 nocolor = lambda s: '\033[m' + s
 
 
@@ -55,8 +56,12 @@ def debug(*args, **kwargs):
     print_stderr(magenta('[Debug]'), *args, **kwargs)
 
 
+def info(*args, **kwargs):
+    print('[Info]', *args, **kwargs)
+
+
 def error(*args, **kwargs):
-    print_stderr(red('[Error]'), *args, **kwargs)
+    print_stderr(red('[Error]'), *args)
 
 
 def usage(prog):
@@ -73,7 +78,7 @@ def inventory_to_stage(inventory):
     stage = collections.OrderedDict()
 
     for idx, fpath in enumerate(inventory, start=10**len(str(len(inventory)))):
-        stage[idx] = fpath.rstrip('/')
+        stage[str(idx)] = relpath(fpath)
 
     return stage
 
@@ -83,10 +88,27 @@ def stage_to_inventory(stage):
 
 
 def diff_stages(stage_current, stage_new):
-    return set()
+    ret = set()
+
+    debug('stage current')
+    for idx, fpath in stage_current.items():
+        debug(idx, fpath)
+
+    debug()
+    debug('stage new')
+    for idx, fpath in stage_new.items():
+        debug(idx, fpath)
+
+    for idx in stage_current:
+        if idx not in stage_new:
+            ret.add(('remove', stage_current[idx]))
+        elif stage_current[idx] != stage_new[idx]:
+            ret.add(('rename', stage_current[idx], stage_new[str(idx)]))
+
+    return ret
 
 
-def prompt_to_vim(stage_current):
+def user_edit_stage(stage_current):
     while True:
         with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
 
@@ -102,7 +124,13 @@ def prompt_to_vim(stage_current):
                 f.flush()
 
             # Invoke vim to edit item list
-            sub.call(['vim', tf.name, '+set nonu', '+set syntax=python', '+set tabstop=8'], stdin=open('/dev/tty'))
+            sub.call([
+                'vim', tf.name,
+                '+set nonu',
+                '+set syntax=python',
+                '+set tabstop=8'],
+                stdin=open('/dev/tty')
+                )
 
             # Parse tempfile and retrieve new stage content
             stage_new = collections.OrderedDict()
@@ -123,14 +151,14 @@ def prompt_to_vim(stage_current):
                             has_parse_error = True
 
                         else:
-                            stage_new[idx] = item.rstrip('/')
+                            stage_new[idx] = relpath(item)
 
                     else:
                         error('Line {}, parsing error: {}'.format(linenum, red(line)))
                         has_parse_error = True
 
             if has_parse_error:
-                user_confirm = prompt_confirm('Re-edit?', ['edit', 'quit'])
+                user_confirm = prompt_confirm('Edit again?', ['edit', 'quit'])
                 if user_confirm == 'e':
                     continue
 
@@ -158,7 +186,7 @@ def prompt_confirm(prompt_text, options):
         options[0] = options[0][0].upper() + options[0][1:]
 
         while user_confirm is None:
-            print_stderr(prompt_text + ' '
+            print(prompt_text + ' '
                     + '['
                     + ' / '.join('({}){}'.format(o[0], o[1:]) for o in options)
                     + ']', end=' ')
@@ -172,11 +200,10 @@ def prompt_confirm(prompt_text, options):
                 continue
 
     except KeyboardInterrupt:
-        print_stderr('KeyboardInterrupt')
+        print(black('KeyboardInterrupt'))
         exit(1)
 
     except EOFError:
-        print_stderr('Y')
         user_confirm = 'y'
 
     sys.stdin = stdin_backup
@@ -194,19 +221,18 @@ def main():
         error('stdout and stderr must be tty')
         exit(1)
 
+    #TODO: use argparse
     if '-h' in argv or '--help' in argv:
         usage(prog)
 
-    initial_targets = collections.OrderedDict()
-
     # =========================================================================
-    # Collect initial targets and construct the inventory
+    # Collect initial targets
     # =========================================================================
     # Targets from commnad line arguments are expanded
     # Targets from stdin are not expanded
     # If non-provided, '.' is expanded
-    #
-    # The inventory contains the watching file/dir list without trailing slash
+
+    initial_targets = collections.OrderedDict()
 
     for arg in argv:
         initial_targets[arg] = True
@@ -217,6 +243,12 @@ def main():
 
     if not initial_targets:
         initial_targets['.'] = True
+
+    # =========================================================================
+    # Construct the inventory
+    # =========================================================================
+    # The inventory contains the watching file/dir path list, that will be
+    # maintained over iterations
 
     inventory = []
     has_error = False
@@ -234,10 +266,10 @@ def main():
         else:
             inventory.append(relpath(target))
 
-    inventory = [i[2:] if i.startswith('./') else i for i in inventory]
-
     if has_error:
         exit(1)
+
+    inventory = [i[2:] if i.startswith('./') else i for i in inventory]
 
     # =========================================================================
     # Main loop
@@ -257,14 +289,26 @@ def main():
     while True:
         stage_current = inventory_to_stage(inventory)
 
-        stage_new = prompt_to_vim(stage_current)
+        stage_new = user_edit_stage(stage_current)
+
+        op_list = diff_stages(stage_current, stage_new)
+        for op in op_list:
+            debug(op)
+
+        if not op_list:
+            info('No change')
+            break
+
+        user_confirm = prompt_confirm('Continue?', ('yes', 'edit', 'redo', 'quit'))
+        if user_confirm in 'yq':
+            break
 
         inventory_new = stage_to_inventory(stage_new)
 
         #TODO: diff them and generate op list
-        print('==')
+        debug('==')
         for idx in sorted(stage_new.keys()):
-            print('(', idx, stage_new[idx], ')')
+            debug('(', idx, stage_new[idx], ')')
 
         # Just for testing
         if (not inventory_new) or (inventory == inventory_new):
