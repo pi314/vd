@@ -110,10 +110,15 @@ def diff_stages(stage_now, stage_new):
     return ret
 
 
+def pretty_print_operand(color, prompt, path):
+    print(color(prompt) + color('[') + ' ' + path + ' ' + color(']'))
+
+
 def print_op_list(op_list):
     for op in op_list:
         if op[0] == 'remove':
-            print(red('Remove:'), magenta('[') + red(op[1] + ('/' if isdir(op[1]) else '')) + magenta(']'))
+            p = op[1] + ('/' if isdir(op[1]) else '')
+            pretty_print_operand(red, 'Remove:', p)
 
         elif op[0] == 'rename':
             a, b = (op[1], op[2])
@@ -134,8 +139,8 @@ def print_op_list(op_list):
                     A += yellow(a[i1:i2])
                     B += yellow(b[j1:j2])
 
-            print(yellow('Rename:'), magenta('[') + A + magenta(']'))
-            print(yellow('======>'), magenta('[') + B + magenta(']'))
+            pretty_print_operand(yellow, 'Rename:', A)
+            pretty_print_operand(yellow, '======>', B)
 
         else:
             debug(op)
@@ -144,7 +149,11 @@ def print_op_list(op_list):
 def apply_op_list(op_list):
     for op in op_list:
         if op[0] == 'remove':
-            print('(dry)', red('Removing:'), magenta('[') + red(op[1] + ('/' if isdir(op[1]) else '')) + magenta(']'))
+            pretty_print_operand(red, '(dry)Removing:', red(op[1] + ('/' if isdir(op[1]) else '')))
+        elif op[0] == 'rename':
+            pretty_print_operand(yellow, '(dry)Rename:', yellow(op[1]))
+            pretty_print_operand(yellow, '(dry)======>', yellow(op[2]))
+
         else:
             debug('(dry)', op)
 
