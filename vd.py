@@ -3,15 +3,17 @@
 #TODO: Set default mapping for J/K to move entry downward/upward
 #TODO: vim default config
 #TODO: If user change dir to .tar (by removing the trailing slash), tar it
+#TODO: expand dir by appending a asterisk to a dir
 
 __version__ = '0.0.0'
 
+import collections
+import difflib
 import os
 import re
 import subprocess as sub
 import sys
 import tempfile
-import collections
 
 from os.path import basename, join, exists, isdir, relpath
 
@@ -110,7 +112,41 @@ def diff_stages(stage_now, stage_new):
 
 def print_op_list(op_list):
     for op in op_list:
-        print(op)
+        if op[0] == 'remove':
+            print(red('Remove:'), magenta('[') + red(op[1] + ('/' if isdir(op[1]) else '')) + magenta(']'))
+
+        elif op[0] == 'rename':
+            a, b = (op[1], op[2])
+            s = difflib.SequenceMatcher(None, a, b)
+            A, B = ('', '')
+            for tag, i1, i2, j1, j2 in s.get_opcodes():
+                if tag == 'equal':
+                    A += a[i1:i2]
+                    B += b[j1:j2]
+
+                elif tag == 'delete':
+                    A += red(a[i1:i2])
+
+                elif tag == 'insert':
+                    B += green(b[j1:j2])
+
+                elif tag == 'replace':
+                    A += yellow(a[i1:i2])
+                    B += yellow(b[j1:j2])
+
+            print(yellow('Rename:'), magenta('[') + A + magenta(']'))
+            print(yellow('======>'), magenta('[') + B + magenta(']'))
+
+        else:
+            debug(op)
+
+
+def apply_op_list(op_list):
+    for op in op_list:
+        if op[0] == 'remove':
+            print('(dry)', red('Removing:'), magenta('[') + red(op[1] + ('/' if isdir(op[1]) else '')) + magenta(']'))
+        else:
+            debug('(dry)', op)
 
 
 def user_edit_stage(stage_now):
@@ -176,7 +212,7 @@ def user_edit_stage(stage_now):
 
 class UserConfirm:
     def __init__(self, options):
-        self.options = options.copy()
+        self.options = set(options)
         self.selected = None
 
     def __eq__(self, other):
@@ -285,13 +321,21 @@ def main():
             continue
 
         if expand and isdir(target):
-            inventory += [relpath(join(target, i)) for i in sorted(os.listdir(target))]
+            inventory += [
+                    relpath(join(target, i))
+                    for i in sorted(os.listdir(target))
+                    if not i.startswith('.')    #TODO: -a/--all
+                    ]
 
         else:
             inventory.append(relpath(target))
 
     if has_error:
         exit(1)
+
+    if not inventory:
+        print('No targets to edit')
+        exit(0)
 
     inventory = [i[2:] if i.startswith('./') else i for i in inventory]
 
@@ -316,8 +360,6 @@ def main():
         stage_new = user_edit_stage(stage_new)
 
         op_list = diff_stages(stage_now, stage_new)
-        for op in op_list:
-            debug(op)
 
         if not op_list:
             info('No change')
@@ -336,15 +378,8 @@ def main():
             stage_new = stage_now
             continue
 
-        inventory_new = stage_to_inventory(stage_new)
-
-        # Just for testing
-        if (not inventory_new) or (inventory == inventory_new):
-            user_confirm = prompt_confirm('Continue?', ('yes', 'edit', 'redo', 'quit'))
-            if user_confirm in ('yes', 'quit'):
-                break
-
-        inventory = inventory_new
+        apply_op_list(op_list)
+        break
 
 
 if __name__ == '__main__':
