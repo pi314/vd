@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 
+# Mandatory
+#TODO: implement PathList to merge inventory and stage
+
+# Vim related
 #TODO: Set default mapping for J/K to move entry downward/upward
 #TODO: vim default config
+
+# Misc
 #TODO: If user change dir to .tar (by removing the trailing slash), tar it
 #TODO: expand dir by appending a asterisk to a dir
 
 __version__ = '0.0.0'
 
+import argparse
 import collections
 import difflib
 import os
@@ -64,16 +71,6 @@ def info(*args, **kwargs):
 
 def error(*args, **kwargs):
     print_stderr(red('[Error]'), *args)
-
-
-def usage(prog):
-    print_stderr('Usage:')
-    print_stderr()
-    print_stderr('    $ {} [-h|--help]'.format(prog))
-    print_stderr('    $ {}'.format(prog))
-    print_stderr('    $ {} files...'.format(prog))
-    print_stderr('    $ ls -1 | {}'.format(prog))
-    exit(1)
 
 
 def inventory_to_stage(inventory):
@@ -150,9 +147,10 @@ def apply_op_list(op_list):
     for op in op_list:
         if op[0] == 'remove':
             pretty_print_operand(red, '(dry)Removing:', red(op[1] + ('/' if isdir(op[1]) else '')))
+
         elif op[0] == 'rename':
-            pretty_print_operand(yellow, '(dry)Rename:', yellow(op[1]))
-            pretty_print_operand(yellow, '(dry)======>', yellow(op[2]))
+            pretty_print_operand(yellow, '(dry)Renaming:', yellow(op[1]))
+            pretty_print_operand(yellow, '(dry)========>', yellow(op[2]))
 
         else:
             debug('(dry)', op)
@@ -283,16 +281,36 @@ def prompt_confirm(prompt_text, options):
 
 
 def main():
-    prog = basename(sys.argv[0])
-    argv = sys.argv[1:]
-
     if not sys.stdout.isatty() or not sys.stderr.isatty():
         error('stdout and stderr must be tty')
         exit(1)
 
-    #TODO: use argparse
-    if '-h' in argv or '--help' in argv:
-        usage(prog)
+    parser = argparse.ArgumentParser(
+        prog='vd',
+        description='\n'.join((
+            '# ======================================= #',
+            '# A modern Python implementation of vidir #',
+            '# ======================================= #',
+            )),
+        epilog='\n'.join((
+            'examples:',
+            '  $ vd',
+            '  $ vd -a',
+            '  $ find . -type f | vd',
+            )),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+
+    parser.add_argument('-n', '--dry-run', action='store_true',
+            help='Perform a trial run with no changes made')
+
+    parser.add_argument('-a', '--all', action='store_true',
+            help='Include hidden files')
+
+    parser.add_argument('targets', nargs='*',
+            help='Paths to edit, directories are expanded')
+
+    args = parser.parse_args()
 
     # =========================================================================
     # Collect initial targets
@@ -301,17 +319,17 @@ def main():
     # Targets from stdin are not expanded
     # If non-provided, '.' is expanded
 
-    initial_targets = collections.OrderedDict()
+    initial_targets = []
 
-    for arg in argv:
-        initial_targets[arg] = True
+    for arg in args.targets:
+        initial_targets.append((arg, True))
 
     if not sys.stdin.isatty():
         for line in sys.stdin:
-            initial_targets[line.rstrip('\n')] = False
+            initial_targets.append((line.rstrip('\n'), False))
 
     if not initial_targets:
-        initial_targets['.'] = True
+        initial_targets.append(('.', True))
 
     # =========================================================================
     # Construct the inventory
@@ -321,7 +339,7 @@ def main():
 
     inventory = []
     has_error = False
-    for target, expand in initial_targets.items():
+    for target, expand in initial_targets:
         if not exists(target):
             error('File does not exist: [{}]'.format(target));
             has_error = True
@@ -333,7 +351,7 @@ def main():
             inventory += [
                     relpath(join(target, i))
                     for i in sorted(os.listdir(target))
-                    if not i.startswith('.')    #TODO: -a/--all
+                    if args.all or not i.startswith('.')
                     ]
 
         else:
