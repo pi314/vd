@@ -281,10 +281,6 @@ def prompt_confirm(prompt_text, options):
 
 
 def main():
-    if not sys.stdout.isatty() or not sys.stderr.isatty():
-        error('stdout and stderr must be tty')
-        exit(1)
-
     parser = argparse.ArgumentParser(
         prog='vd',
         description='\n'.join((
@@ -311,6 +307,10 @@ def main():
             help='Paths to edit, directories are expanded')
 
     args = parser.parse_args()
+
+    if not sys.stdout.isatty() or not sys.stderr.isatty():
+        error('stdout and stderr must be tty')
+        exit(1)
 
     # =========================================================================
     # Collect initial targets
