@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: implement PathList to merge inventory and stage
+#TODO: implement Inventory to merge inventory and stage
 
 # Vim related
 #TODO: Set default mapping for J/K to move entry downward/upward
 #TODO: vim default config
+#TODO: Print hints on top
 
 # Misc
+#TODO: Comment ('#') a line to untrack an entry
+#TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: If user change dir to .tar (by removing the trailing slash), tar it
-#TODO: expand dir by appending a asterisk to a dir
 
 __version__ = '0.0.0'
 
@@ -29,7 +31,7 @@ import subprocess as sub
 import sys
 import tempfile
 
-from os.path import basename, join, exists, isdir, isfile, relpath
+from os.path import basename, join, exists, isdir, isfile, relpath, normpath
 
 
 options = None
@@ -122,7 +124,7 @@ class Inventory:
             self.add_entry(path, all=all)
 
         elif isdir(path) and expand:
-            ls = os.listdir(path)
+            ls = sorted(os.listdir(path))
             for i in ls:
                 self.add_entry(join(path, i), all=all)
 
@@ -138,7 +140,7 @@ class Inventory:
 
         m = math.ceil(math.log10(len(self.files)))
         for idx, path in enumerate(self.files, start=10**m):
-            self.index[str(idx)] = path
+            self.index[str(idx)] = decorate_path(path)
 
         return self.index
 
@@ -155,7 +157,7 @@ class OpRename:
 # Specialized Utilities
 # =============================================================================
 
-def repr_path(path):
+def decorate_path(path):
     ret = ''
     if not path.startswith(('/', './')):
         ret = './'
@@ -206,15 +208,15 @@ def diff_stages(stage_now, stage_new):
     return ret
 
 
-def pretty_print_operand(color, prompt, path):
-    print(color(prompt) + color('[') + ' ' + path + ' ' + color(']'))
+def pretty_print_operand(level ,color, prompt, path):
+    level(color(prompt) + color('[') + ' ' + path + ' ' + color(']'))
 
 
 def print_op_list(op_list):
     for op in op_list:
         if op[0] == 'remove':
             p = op[1] + ('/' if isdir(op[1]) else '')
-            pretty_print_operand(red, 'Remove:', p)
+            pretty_print_operand(info, red, 'Remove:', p)
 
         elif op[0] == 'rename':
             a, b = (op[1], op[2])
@@ -235,8 +237,8 @@ def print_op_list(op_list):
                     A += yellow(a[i1:i2])
                     B += yellow(b[j1:j2])
 
-            pretty_print_operand(yellow, 'Rename:', A)
-            pretty_print_operand(yellow, '======>', B)
+            pretty_print_operand(info, yellow, 'Rename:', A)
+            pretty_print_operand(info, yellow, '======>', B)
 
         else:
             debug(op)
@@ -247,12 +249,12 @@ def apply_op_list(op_list):
         if op[0] == 'remove':
             # dir: shutil.rmtree()
             # file: os.remove()
-            pretty_print_operand(red, '(dry)Removing:', red(op[1] + ('/' if isdir(op[1]) else '')))
+            pretty_print_operand(info, red, '(dry)Removing:', red(op[1] + ('/' if isdir(op[1]) else '')))
 
         elif op[0] == 'rename':
             # shutil.move()
-            pretty_print_operand(yellow, '(dry)Renaming:', yellow(op[1]))
-            pretty_print_operand(yellow, '(dry)========>', yellow(op[2]))
+            pretty_print_operand(info, yellow, '(dry)Renaming:', yellow(op[1]))
+            pretty_print_operand(info, yellow, '(dry)========>', yellow(op[2]))
 
         else:
             debug('(dry)', op)
@@ -418,14 +420,12 @@ def main():
         error('stdout and stderr must be tty')
         exit(1)
 
-    print(options)
-
     # =========================================================================
     # Collect initial targets
     # =========================================================================
     # Targets from commnad line arguments are expanded
     # Targets from stdin are not expanded
-    # If non-provided, '.' is expanded
+    # If none provided, '.' is expanded
 
     inventory = Inventory()
 
@@ -439,45 +439,24 @@ def main():
     if inventory.is_empty():
         inventory.add('.', expand=True, all=options.all)
 
+    has_error = False
+    for path in inventory.files.keys():
+        if not exists(path):
+            pretty_print_operand(error, red, 'File does not exist:', path)
+            has_error = True
+
+    if has_error:
+        exit(1)
+
+    if inventory.is_empty():
+        info('No targets to edit')
+        exit(0)
+
     for i in inventory.export().items():
         debug(i)
 
     info('WIP, exit')
     exit()
-
-    # =========================================================================
-    # Construct the inventory
-    # =========================================================================
-    # The inventory contains the watching file/dir path list, that will be
-    # maintained over iterations
-
-    has_error = False
-    for target, expand in initial_targets:
-        if not exists(target):
-            error('File does not exist: [{}]'.format(target));
-            has_error = True
-
-        if has_error:
-            continue
-
-        if expand and isdir(target):
-            inventory += [
-                    relpath(join(target, i))
-                    for i in sorted(os.listdir(target))
-                    if args.all or not i.startswith('.')
-                    ]
-
-        else:
-            inventory.append(relpath(target))
-
-    if has_error:
-        exit(1)
-
-    if not inventory:
-        print('No targets to edit')
-        exit(0)
-
-    inventory = [i[2:] if i.startswith('./') else i for i in inventory]
 
     # =========================================================================
     # Main loop
