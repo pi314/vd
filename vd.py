@@ -13,17 +13,31 @@
 
 __version__ = '0.0.0'
 
+
+# =============================================================================
+# Package Imports
+# =============================================================================
+
 import argparse
 import collections
 import difflib
+import itertools
+import math
 import os
 import re
 import subprocess as sub
 import sys
 import tempfile
 
-from os.path import basename, join, exists, isdir, relpath
+from os.path import basename, join, exists, isdir, isfile, relpath
 
+
+options = None
+
+
+# =============================================================================
+# Generalized Utilities
+# =============================================================================
 
 class RegexCache:
     def __init__(self, text):
@@ -66,12 +80,97 @@ def debug(*args, **kwargs):
 
 
 def info(*args, **kwargs):
-    print('[Info]', *args, **kwargs)
+    print(cyan('[Info]'), *args, **kwargs)
 
 
 def error(*args, **kwargs):
     print_stderr(red('[Error]'), *args)
 
+
+# =============================================================================
+# Containers
+# =============================================================================
+
+class Inventory:
+    def __init__(self):
+        self.files = collections.OrderedDict()
+        self.index = None
+
+    def __iter__(self):
+        return iter(self.files)
+
+    def __getitem__(self, index):
+        if not self.index:
+            return None
+
+        return self.index[index]
+
+    def is_empty(self):
+        return not self.files
+
+    def add_entry(self, path, all=False):
+        self.index = None
+
+        if basename(path).startswith('.') and not all:
+            return
+
+        path = path.rstrip('\n')
+        self.files[path] = exists(path)
+
+    def add(self, path, expand=True, all=False):
+        if isfile(path) or not expand:
+            self.add_entry(path, all=all)
+
+        elif isdir(path) and expand:
+            ls = os.listdir(path)
+            for i in ls:
+                self.add_entry(join(path, i), all=all)
+
+            if not ls:
+                self.add_entry(path, all=all)
+
+    def export(self, invalidate=False):
+        if invalidate:
+            self.index = None
+            return
+
+        self.index = collections.OrderedDict()
+
+        m = math.ceil(math.log10(len(self.files)))
+        for idx, path in enumerate(self.files, start=10**m):
+            self.index[str(idx)] = path
+
+        return self.index
+
+
+class OpRemove:
+    pass
+
+
+class OpRename:
+    pass
+
+
+# =============================================================================
+# Specialized Utilities
+# =============================================================================
+
+def repr_path(path):
+    ret = ''
+    if not path.startswith(('/', './')):
+        ret = './'
+
+    ret += path
+
+    if isdir(path):
+        ret += '/'
+
+    return ret
+
+
+# =============================================================================
+# Chaos
+# =============================================================================
 
 def inventory_to_stage(inventory):
     stage = collections.OrderedDict()
@@ -146,9 +245,12 @@ def print_op_list(op_list):
 def apply_op_list(op_list):
     for op in op_list:
         if op[0] == 'remove':
+            # dir: shutil.rmtree()
+            # file: os.remove()
             pretty_print_operand(red, '(dry)Removing:', red(op[1] + ('/' if isdir(op[1]) else '')))
 
         elif op[0] == 'rename':
+            # shutil.move()
             pretty_print_operand(yellow, '(dry)Renaming:', yellow(op[1]))
             pretty_print_operand(yellow, '(dry)========>', yellow(op[2]))
 
@@ -281,6 +383,8 @@ def prompt_confirm(prompt_text, options):
 
 
 def main():
+    global options
+
     parser = argparse.ArgumentParser(
         prog='vd',
         description='\n'.join((
@@ -298,19 +402,23 @@ def main():
         )
 
     parser.add_argument('-n', '--dry-run', action='store_true',
+            default=False,
             help='Perform a trial run with no changes made')
 
     parser.add_argument('-a', '--all', action='store_true',
+            default=False,
             help='Include hidden files')
 
     parser.add_argument('targets', nargs='*',
             help='Paths to edit, directories are expanded')
 
-    args = parser.parse_args()
+    options = parser.parse_args()
 
     if not sys.stdout.isatty() or not sys.stderr.isatty():
         error('stdout and stderr must be tty')
         exit(1)
+
+    print(options)
 
     # =========================================================================
     # Collect initial targets
@@ -319,17 +427,23 @@ def main():
     # Targets from stdin are not expanded
     # If non-provided, '.' is expanded
 
-    initial_targets = []
+    inventory = Inventory()
 
-    for arg in args.targets:
-        initial_targets.append((arg, True))
+    for target in options.targets:
+        inventory.add(target, expand=True, all=options.all)
 
     if not sys.stdin.isatty():
         for line in sys.stdin:
-            initial_targets.append((line.rstrip('\n'), False))
+            inventory.add(line, expand=False, all=options.all)
 
-    if not initial_targets:
-        initial_targets.append(('.', True))
+    if inventory.is_empty():
+        inventory.add('.', expand=True, all=options.all)
+
+    for i in inventory.export().items():
+        debug(i)
+
+    info('WIP, exit')
+    exit()
 
     # =========================================================================
     # Construct the inventory
@@ -337,7 +451,6 @@ def main():
     # The inventory contains the watching file/dir path list, that will be
     # maintained over iterations
 
-    inventory = []
     has_error = False
     for target, expand in initial_targets:
         if not exists(target):
