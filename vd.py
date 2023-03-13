@@ -260,18 +260,16 @@ def apply_op_list(op_list):
             debug('(dry)', op)
 
 
-def user_edit_stage(stage_now):
+def vim_edit_inventory(inventory):
     while True:
         with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
 
-            # Write current stage into tempfile
+            # Write inventory into tempfile
             with open(tf.name, mode='w', encoding='utf8') as f:
-                for idx, fpath in stage_now.items():
-                    f.write('{idx}\t{dot_slash}{fpath}{trailing_slash}\n'.format(
+                for idx, fpath in inventory.export().items():
+                    f.write('{idx}\t{fpath}\n'.format(
                         idx=idx,
-                        dot_slash='./' if not fpath.startswith(('/', './')) else '',
                         fpath=fpath,
-                        trailing_slash='/' if isdir(fpath) else '',
                         ))
                 f.flush()
 
@@ -284,8 +282,8 @@ def user_edit_stage(stage_now):
                 stdin=open('/dev/tty')
                 )
 
-            # Parse tempfile and retrieve new stage content
-            stage_new = collections.OrderedDict()
+            # Parse tempfile content
+            ret = collections.OrderedDict()
             has_parse_error = False
             with open(tf.name, mode='r', encoding='utf8') as f:
                 for linenum, line in enumerate(f, start=1):
@@ -297,16 +295,16 @@ def user_edit_stage(stage_now):
                     rec = RegexCache(line)
 
                     if rec.match(r'^(#?\d+)\t(.*)$'):
-                        idx, item = rec.group(1), rec.group(2)
-                        if not item:
+                        idx, fpath = rec.group(1), rec.group(2)
+                        if not fpath:
                             error('Line {}: file path cannot be empty'.format(linenum))
                             has_parse_error = True
 
                         else:
-                            stage_new[idx] = relpath(item)
+                            ret[idx] = fpath
 
                     else:
-                        error('Line {}, parsing error: {}'.format(linenum, red(line)))
+                        error('Line {}: parsing error: {}'.format(linenum, red(line)))
                         has_parse_error = True
 
             if has_parse_error:
@@ -318,7 +316,7 @@ def user_edit_stage(stage_now):
 
         break
 
-    return stage_new
+    return ret
 
 
 class UserConfirm:
@@ -452,12 +450,6 @@ def main():
         info('No targets to edit')
         exit(0)
 
-    for i in inventory.export().items():
-        debug(i)
-
-    info('WIP, exit')
-    exit()
-
     # =========================================================================
     # Main loop
     # =========================================================================
@@ -472,11 +464,20 @@ def main():
     # 5.y. if user say "y" (yes) or enter, apply the OP list
     # 5.*. keep asking until recognized option is selected or Ctrl-C is pressed
 
-    stage_now = inventory_to_stage(inventory)
-    stage_new = stage_now.copy()
-
     while True:
-        stage_new = user_edit_stage(stage_new)
+        debug('==========')
+        for i in inventory.export().items():
+            debug(i)
+
+        ret = vim_edit_inventory(inventory)
+
+        debug('----------')
+        for i in ret.items():
+            debug(i)
+        debug('==========')
+
+        info('WIP, exit')
+        exit()
 
         op_list = diff_stages(stage_now, stage_new)
 
