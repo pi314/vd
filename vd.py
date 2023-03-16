@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: implement Inventory to merge inventory and stage
+#TODO: Review error handling flow
+#####> Skip all content checking (piti, path) in parsing phase?
+#####> Because it cant check inexisting piti
+#TODO: Generate OP list
+#TODO: Refine parse error message, because vim's content disappears after exit
+#TODO: Comment ('#') a line to untrack an entry
+#TODO: Expand dir, '*' for all and '+' for non-hidden entries
+#TODO: -r/--recursive, with depth limit?
 
 # Vim related
 #TODO: Set default mapping for J/K to move entry downward/upward
@@ -9,11 +16,8 @@
 #TODO: Print hints on top
 #TODO: Respect LS_COLORS
 
-# Misc
-#TODO: Comment ('#') a line to untrack an entry
-#TODO: Expand dir, '*' for all and '+' for non-hidden entries
+# Enhancement
 #TODO: If user change dir to .tar (by removing the trailing slash), tar it
-#TODO: -r/--recursive
 
 __version__ = '0.0.0'
 
@@ -102,7 +106,7 @@ def error(*args, **kwargs):
 class DuplicatedPathError(Exception):
     pass
 
-class DuplicatedIndexError(Exception):
+class DuplicatedPitiError(Exception):
     pass
 
 class EmptyPathError(Exception):
@@ -110,18 +114,21 @@ class EmptyPathError(Exception):
 
 
 class Pair:
-    def __init__(self, index, path):
-        self.index = index
+    def __init__(self, piti, path):
+        # PITI = Path Item Temporary Identifier
+        # A temporary unique number that associated to a path for path operation
+
+        self.piti = piti
         self.path = path
 
     def __iter__(self):
-        return iter((self.index, self.path))
+        return iter((self.piti, self.path))
 
     def __getitem__(self, index):
-        return (self.index, self.path)[index]
+        return (self.piti, self.path)[index]
 
     def __repr__(self):
-        return repr((self.index, self.path))
+        return repr((self.piti, self.path))
 
 
 class Inventory:
@@ -130,8 +137,8 @@ class Inventory:
         self.ignore_dup = False
         self.keep_not_exist = False
         self.content = []
-        self.paths = dict()
-        self.index = dict()
+        self.path_index = dict()
+        self.piti_index = dict()
 
     def __len__(self):
         return len(self.content)
@@ -143,9 +150,9 @@ class Inventory:
         return self.content[index]
 
     def __contains__(self, path):
-        return path in self.paths
+        return path in self.path_index
 
-    def append_entry(self, index, path):
+    def append_entry(self, piti, path):
         if not path:
             raise EmptyPathError()
 
@@ -155,21 +162,21 @@ class Inventory:
 
         upath += path.rstrip('/')
 
-        if not path.endswith('/') and isdir(upath):
+        if isdir(path):
             upath += '/'
 
-        if index in self.index:
-            raise DuplicatedIndexError(index)
+        if piti in self.piti_index:
+            raise DuplicatedPitiError(piti)
 
-        if upath in self.paths:
+        if upath in self.path_index:
             raise DuplicatedPathError(upath)
 
-        self.content.append(Pair(index, upath))
+        self.content.append(Pair(piti, upath))
 
-        if index:
-            self.index[index] = upath
+        if piti:
+            self.piti_index[piti] = upath
 
-        self.paths[upath] = index
+        self.path_index[upath] = piti
 
     def _append_path(self, path):
         if basename(path).startswith('.') and self.ignore_hidden:
@@ -199,19 +206,14 @@ class Inventory:
             raise Exception('Unknown file type')
 
     def build_index(self):
-        self.index = dict()
+        self.piti_index = dict()
 
         for i, entry in enumerate(self.content, start=10 ** ceil(log10(len(self.content))) + 1):
-            entry.index = str(i)
-            self.index[entry.index] = entry.path
+            entry.piti = str(i)
+            self.piti_index[entry.piti] = entry.path
 
-
-class OpRemove:
-    pass
-
-
-class OpRename:
-    pass
+    def get_path_by_piti(self, piti):
+        return self.piti_index.get(piti)
 
 
 # =============================================================================
@@ -250,36 +252,35 @@ def normalize_path(path):
 # Chaos
 # =============================================================================
 
-def inventory_to_stage(inventory):
-    stage = collections.OrderedDict()
-
-    for idx, fpath in enumerate(inventory, start=10**len(str(len(inventory)))):
-        stage[str(idx)] = relpath(fpath)
-
-    return stage
-
-
-def stage_to_inventory(stage):
-    return list(stage.values())
-
-
-def diff_stages(stage_now, stage_new):
+def calculate_inventory_diff(old, new):
     ret = []
 
-    debug('stage current')
-    for idx, fpath in stage_now.items():
-        debug(idx, fpath)
+    debug('==== inventory (old) ====')
+    for piti, fpath in old.content:
+        debug((piti, fpath))
+    debug('-------------------------')
+    for piti, fpath in new.content:
+        debug((piti, fpath))
+    debug('==== inventory (new) ====')
 
-    debug()
-    debug('stage new')
-    for idx, fpath in stage_new.items():
-        debug(idx, fpath)
+    for piti, opath in old.content:
+        npath = new.get_path_by_piti(piti)
 
-    for idx in stage_now:
-        if idx not in stage_new:
-            ret.append(('remove', stage_now[idx]))
-        elif stage_now[idx] != stage_new[idx]:
-            ret.append(('rename', stage_now[idx], stage_new[str(idx)]))
+        if not npath:
+            if new.get_path_by_piti('#' + piti) is not None:
+                ret.append(('untrack', piti))
+            else:
+                ret.append(('remove', opath))
+
+        elif opath != npath:
+            ret.append(('rename', opath, npath))
+
+    for piti, npath in new.content:
+        if piti.startswith('#'):
+            continue
+
+        if old.get_path_by_piti(piti) is None:
+            ret.append(('unknown', piti, npath))
 
     return ret
 
@@ -342,8 +343,8 @@ def vim_edit_inventory(inventory):
             # Write inventory into tempfile
             with open(tf.name, mode='w', encoding='utf8') as f:
                 inventory.build_index()
-                for idx, fpath in inventory.index.items():
-                    f.write(f'{idx}\t{fpath}\n')
+                for piti, fpath in inventory.content:
+                    f.write(f'{piti}\t{fpath}\n')
                 f.flush()
 
             # Invoke vim to edit item list
@@ -368,14 +369,14 @@ def vim_edit_inventory(inventory):
                     rec = RegexCache(line)
 
                     if rec.match(r'^(#?\d+)\t(.*)$'):
-                        idx, fpath = rec.group(1), rec.group(2)
+                        piti, fpath = rec.group(1), rec.group(2)
 
                         try:
-                            ret.append_entry(idx, fpath)
+                            ret.append_entry(piti, fpath)
                         except EmptyPathError:
                             errors.append(f'Line {linenum}: file path cannot be empty')
-                        except DuplicatedIndexError:
-                            errors.append(f'Line {linenum}: duplicated index: {idx}')
+                        except DuplicatedPitiError:
+                            errors.append(f'Line {linenum}: duplicated key: {piti}')
                         except DuplicatedPathError:
                             errors.append(f'Line {linenum}: duplicated path: {RLB}{fpath}{RRB}')
 
@@ -526,7 +527,7 @@ def main():
         inventory.append(t, expand=e)
 
     has_error = False
-    for path in inventory.paths.keys():
+    for _, path in inventory.content:
         if not exists(path):
             pretty_print_operand(error, red, 'File does not exist:', path)
             has_error = True
@@ -555,21 +556,15 @@ def main():
     while True:
         inventory.build_index()
 
-        debug('==========')
-        for i in inventory.content:
-            debug(i)
+        veinventory = vim_edit_inventory(inventory)
 
-        ret = vim_edit_inventory(inventory)
+        op_list = calculate_inventory_diff(inventory, veinventory)
 
-        debug('----------')
-        for i in ret.index.items():
-            debug(i)
-        debug('==========')
+        for op in op_list:
+            print(op)
 
         info('WIP, exit')
         exit()
-
-        op_list = diff_stages(stage_now, stage_new)
 
         if not op_list:
             info('No change')
