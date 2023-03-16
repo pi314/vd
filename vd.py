@@ -7,11 +7,13 @@
 #TODO: Set default mapping for J/K to move entry downward/upward
 #TODO: vim default config
 #TODO: Print hints on top
+#TODO: Respect LS_COLORS
 
 # Misc
 #TODO: Comment ('#') a line to untrack an entry
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: If user change dir to .tar (by removing the trailing slash), tar it
+#TODO: -r/--recursive
 
 __version__ = '0.0.0'
 
@@ -31,7 +33,8 @@ import subprocess as sub
 import sys
 import tempfile
 
-from os.path import basename, join, exists, isdir, isfile, relpath, normpath
+from os.path import basename, join, exists, isdir, isfile, relpath, normpath, split
+from math import ceil, log10
 
 
 options = None
@@ -58,7 +61,7 @@ def color_to(color_code):
     def colorer(s):
         if not s:
             return ''
-        return '\033[{}m{}\033[m'.format(color_code, s)
+        return f'\033[{color_code}m{s}\033[m'
     return colorer
 
 black = color_to('38;2;22;22;29') # eigengrau, or brain gray
@@ -70,6 +73,9 @@ magenta = color_to(35)
 cyan = color_to(36)
 white = color_to(37)
 nocolor = lambda s: '\033[m' + s
+
+RLB = red('[')
+RRB = red(']')
 
 
 def print_stderr(*args, **kwargs):
@@ -93,56 +99,111 @@ def error(*args, **kwargs):
 # Containers
 # =============================================================================
 
-class Inventory:
-    def __init__(self):
-        self.files = collections.OrderedDict()
-        self.index = None
+class DuplicatedPathError(Exception):
+    pass
+
+class DuplicatedIndexError(Exception):
+    pass
+
+class EmptyPathError(Exception):
+    pass
+
+
+class Pair:
+    def __init__(self, index, path):
+        self.index = index
+        self.path = path
 
     def __iter__(self):
-        return iter(self.files)
+        return iter((self.index, self.path))
 
     def __getitem__(self, index):
-        if not self.index:
-            return None
+        return (self.index, self.path)[index]
 
-        return self.index[index]
+    def __repr__(self):
+        return repr((self.index, self.path))
 
-    def is_empty(self):
-        return not self.files
 
-    def add_entry(self, path, all=False):
-        self.index = None
+class Inventory:
+    def __init__(self):
+        self.ignore_hidden = False
+        self.ignore_dup = False
+        self.keep_not_exist = False
+        self.content = []
+        self.paths = dict()
+        self.index = dict()
 
-        if basename(path).startswith('.') and not all:
+    def __len__(self):
+        return len(self.content)
+
+    def __iter__(self):
+        return iter(self.content)
+
+    def __getitem__(self, index):
+        return self.content[index]
+
+    def __contains__(self, path):
+        return path in self.paths
+
+    def append_entry(self, index, path):
+        if not path:
+            raise EmptyPathError()
+
+        upath = ''
+        if not path.startswith(('./', '/')):
+            upath = './'
+
+        upath += path.rstrip('/')
+
+        if not path.endswith('/') and isdir(upath):
+            upath += '/'
+
+        if index in self.index:
+            raise DuplicatedIndexError(index)
+
+        if upath in self.paths:
+            raise DuplicatedPathError(upath)
+
+        self.content.append(Pair(index, upath))
+
+        if index:
+            self.index[index] = upath
+
+        self.paths[upath] = index
+
+    def _append_path(self, path):
+        if basename(path).startswith('.') and self.ignore_hidden:
             return
 
-        path = path.rstrip('\n')
-        self.files[path] = exists(path)
+        self.append_entry(None, path)
 
-    def add(self, path, expand=True, all=False):
-        if isfile(path) or not expand:
-            self.add_entry(path, all=all)
+    def append(self, path, expand=False, keep_empty_dir=False):
+        if not expand:
+            self._append_path(path)
 
-        elif isdir(path) and expand:
+        elif not exists(path):
+            self._append_path(path)
+
+        elif isdir(path):
             ls = sorted(os.listdir(path))
             for i in ls:
-                self.add_entry(join(path, i), all=all)
+                self._append_path(join(path, i))
 
-            if not ls:
-                self.add_entry(path, all=all)
+            if not ls and keep_empty_dir:
+                self._append_path(path)
 
-    def export(self, invalidate=False):
-        if invalidate:
-            self.index = None
-            return
+        elif isfile(path):
+            self._append_path(path)
 
-        self.index = collections.OrderedDict()
+        else:
+            raise Exception('Unknown file type')
 
-        m = math.ceil(math.log10(len(self.files)))
-        for idx, path in enumerate(self.files, start=10**m):
-            self.index[str(idx)] = decorate_path(path)
+    def build_index(self):
+        self.index = dict()
 
-        return self.index
+        for i, entry in enumerate(self.content, start=10 ** ceil(log10(len(self.content))) + 1):
+            entry.index = str(i)
+            self.index[entry.index] = entry.path
 
 
 class OpRemove:
@@ -157,17 +218,32 @@ class OpRename:
 # Specialized Utilities
 # =============================================================================
 
-def decorate_path(path):
-    ret = ''
-    if not path.startswith(('/', './')):
-        ret = './'
+def normalize_path(path):
+    if not path:
+        return ''
 
-    ret += path
+    upath = ''
+    if not path.startswith(('./', '/')):
+        upath = './'
 
-    if isdir(path):
-        ret += '/'
+    upath += path
 
-    return ret
+    if not path.endswith('/') and isdir(upath):
+        upath += '/'
+
+    return upath
+
+    # upath = relpath(path)
+    # if path.startswith('/'):
+    #     relroot = relpath('/')
+    #     upath = upath[len(relroot):]
+    # else:
+    #     upath = './' + upath
+    #
+    # if isdir(path):
+    #     upath += '/'
+    #
+    # return upath
 
 
 # =============================================================================
@@ -209,7 +285,7 @@ def diff_stages(stage_now, stage_new):
 
 
 def pretty_print_operand(level ,color, prompt, path):
-    level(color(prompt) + color('[') + ' ' + path + ' ' + color(']'))
+    level(color(prompt) + color('[') + path + color(']'))
 
 
 def print_op_list(op_list):
@@ -263,14 +339,11 @@ def apply_op_list(op_list):
 def vim_edit_inventory(inventory):
     while True:
         with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
-
             # Write inventory into tempfile
             with open(tf.name, mode='w', encoding='utf8') as f:
-                for idx, fpath in inventory.export().items():
-                    f.write('{idx}\t{fpath}\n'.format(
-                        idx=idx,
-                        fpath=fpath,
-                        ))
+                inventory.build_index()
+                for idx, fpath in inventory.index.items():
+                    f.write(f'{idx}\t{fpath}\n')
                 f.flush()
 
             # Invoke vim to edit item list
@@ -283,8 +356,8 @@ def vim_edit_inventory(inventory):
                 )
 
             # Parse tempfile content
-            ret = collections.OrderedDict()
-            has_parse_error = False
+            ret = Inventory()
+            errors = []
             with open(tf.name, mode='r', encoding='utf8') as f:
                 for linenum, line in enumerate(f, start=1):
                     line = line.rstrip('\n')
@@ -296,20 +369,26 @@ def vim_edit_inventory(inventory):
 
                     if rec.match(r'^(#?\d+)\t(.*)$'):
                         idx, fpath = rec.group(1), rec.group(2)
-                        if not fpath:
-                            error('Line {}: file path cannot be empty'.format(linenum))
-                            has_parse_error = True
 
-                        else:
-                            ret[idx] = fpath
+                        try:
+                            ret.append_entry(idx, fpath)
+                        except EmptyPathError:
+                            errors.append(f'Line {linenum}: file path cannot be empty')
+                        except DuplicatedIndexError:
+                            errors.append(f'Line {linenum}: duplicated index: {idx}')
+                        except DuplicatedPathError:
+                            errors.append(f'Line {linenum}: duplicated path: {RLB}{fpath}{RRB}')
 
                     else:
-                        error('Line {}: parsing error: {}'.format(linenum, red(line)))
-                        has_parse_error = True
+                        errors.append(f'Line {linenum}: parsing error: {RLB}{line}{RRB}')
 
-            if has_parse_error:
+            if errors:
+                for e in errors:
+                    error(e)
+
                 user_confirm = prompt_confirm('Edit again?', ['edit', 'quit'])
                 if user_confirm == 'edit':
+                    print()
                     continue
 
                 exit(1)
@@ -407,7 +486,7 @@ def main():
 
     parser.add_argument('-a', '--all', action='store_true',
             default=False,
-            help='Include hidden files')
+            help='Include hidden paths')
 
     parser.add_argument('targets', nargs='*',
             help='Paths to edit, directories are expanded')
@@ -425,20 +504,29 @@ def main():
     # Targets from stdin are not expanded
     # If none provided, '.' is expanded
 
-    inventory = Inventory()
+    targets = []
 
     for target in options.targets:
-        inventory.add(target, expand=True, all=options.all)
+        targets.append((target, True))
+        # inventory.append(target, expand=True)
 
     if not sys.stdin.isatty():
         for line in sys.stdin:
-            inventory.add(line, expand=False, all=options.all)
+            targets.append((line.rstrip('\n'), False))
+            # inventory.append(line.rstrip('\n'), expand=False)
 
-    if inventory.is_empty():
-        inventory.add('.', expand=True, all=options.all)
+    if not targets:
+        targets.append(('.', True))
+
+    inventory = Inventory()
+    inventory.ignore_hidden = not options.all
+    inventory.ignore_dup = True
+
+    for t, e in targets:
+        inventory.append(t, expand=e)
 
     has_error = False
-    for path in inventory.files.keys():
+    for path in inventory.paths.keys():
         if not exists(path):
             pretty_print_operand(error, red, 'File does not exist:', path)
             has_error = True
@@ -446,7 +534,7 @@ def main():
     if has_error:
         exit(1)
 
-    if inventory.is_empty():
+    if not inventory:
         info('No targets to edit')
         exit(0)
 
@@ -465,14 +553,16 @@ def main():
     # 5.*. keep asking until recognized option is selected or Ctrl-C is pressed
 
     while True:
+        inventory.build_index()
+
         debug('==========')
-        for i in inventory.export().items():
+        for i in inventory.content:
             debug(i)
 
         ret = vim_edit_inventory(inventory)
 
         debug('----------')
-        for i in ret.items():
+        for i in ret.index.items():
             debug(i)
         debug('==========')
 
