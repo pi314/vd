@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: Review error handling flow
-#####> Skip all content checking (piti, path) in parsing phase?
-#####> Because it cant check inexisting piti
+#TODO: Rewrite program flow with state machine
+#####> The prompt-to-user flow seems too complex for while+continue/break
 #TODO: Generate OP list
 #TODO: Refine parse error message, because vim's content disappears after exit
 #TODO: Comment ('#') a line to untrack an entry
@@ -103,12 +102,6 @@ def error(*args, **kwargs):
 # Containers
 # =============================================================================
 
-class DuplicatedPathError(Exception):
-    pass
-
-class DuplicatedPitiError(Exception):
-    pass
-
 class EmptyPathError(Exception):
     pass
 
@@ -134,8 +127,7 @@ class Pair:
 class Inventory:
     def __init__(self):
         self.ignore_hidden = False
-        self.ignore_dup = False
-        self.keep_not_exist = False
+        self.ignore_duplicated_path = False
         self.content = []
         self.path_index = dict()
         self.piti_index = dict()
@@ -165,18 +157,16 @@ class Inventory:
         if isdir(path):
             upath += '/'
 
-        if piti in self.piti_index:
-            raise DuplicatedPitiError(piti)
-
-        if upath in self.path_index:
-            raise DuplicatedPathError(upath)
-
-        self.content.append(Pair(piti, upath))
-
-        if piti:
+        if piti and piti not in self.piti_index:
             self.piti_index[piti] = upath
 
-        self.path_index[upath] = piti
+        if upath not in self.path_index:
+            self.path_index[upath] = piti
+
+        elif self.ignore_duplicated_path:
+            return
+
+        self.content.append(Pair(piti, upath))
 
     def _append_path(self, path):
         if basename(path).startswith('.') and self.ignore_hidden:
@@ -256,31 +246,52 @@ def calculate_inventory_diff(old, new):
     ret = []
 
     debug('==== inventory (old) ====')
-    for piti, fpath in old.content:
-        debug((piti, fpath))
+    for opiti, opath in old.content:
+        debug((opiti, opath))
     debug('-------------------------')
-    for piti, fpath in new.content:
-        debug((piti, fpath))
+    for npiti, npath in new.content:
+        debug((npiti, npath))
     debug('==== inventory (new) ====')
 
-    for piti, opath in old.content:
-        npath = new.get_path_by_piti(piti)
+    piti_set = set()
+    path_set = set()
+    errors = []
+    for npiti, path in new.content:
+        if npiti in piti_set:
+            errors.append(f'Duplicated key: {npiti}')
+
+        else:
+            piti_set.add(npiti)
+
+        if path in path_set:
+            errors.append(f'Duplicated path: {RLB}{path}{RRB}')
+
+        else:
+            path_set.add(path)
+
+    if errors:
+        for e in errors:
+            error(e)
+        exit(1) # TODO: prompt for re-edit
+
+    for opiti, opath in old.content:
+        npath = new.get_path_by_piti(opiti)
 
         if not npath:
-            if new.get_path_by_piti('#' + piti) is not None:
-                ret.append(('untrack', piti))
+            if new.get_path_by_piti('#' + opiti) is not None:
+                ret.append(('untrack', opiti))
             else:
                 ret.append(('remove', opath))
 
         elif opath != npath:
             ret.append(('rename', opath, npath))
 
-    for piti, npath in new.content:
-        if piti.startswith('#'):
+    for npiti, npath in new.content:
+        if npiti.startswith('#'):
             continue
 
-        if old.get_path_by_piti(piti) is None:
-            ret.append(('unknown', piti, npath))
+        if old.get_path_by_piti(npiti) is None:
+            ret.append(('unknown', npiti, npath))
 
     return ret
 
@@ -292,7 +303,7 @@ def pretty_print_operand(level ,color, prompt, path):
 def print_op_list(op_list):
     for op in op_list:
         if op[0] == 'remove':
-            p = op[1] + ('/' if isdir(op[1]) else '')
+            p = op[1]
             pretty_print_operand(info, red, 'Remove:', p)
 
         elif op[0] == 'rename':
@@ -318,7 +329,7 @@ def print_op_list(op_list):
             pretty_print_operand(info, yellow, '======>', B)
 
         else:
-            debug(op)
+            info(op)
 
 
 def apply_op_list(op_list):
@@ -343,8 +354,8 @@ def vim_edit_inventory(inventory):
             # Write inventory into tempfile
             with open(tf.name, mode='w', encoding='utf8') as f:
                 inventory.build_index()
-                for piti, fpath in inventory.content:
-                    f.write(f'{piti}\t{fpath}\n')
+                for piti, path in inventory.content:
+                    f.write(f'{piti}\t{path}\n')
                 f.flush()
 
             # Invoke vim to edit item list
@@ -369,16 +380,12 @@ def vim_edit_inventory(inventory):
                     rec = RegexCache(line)
 
                     if rec.match(r'^(#?\d+)\t(.*)$'):
-                        piti, fpath = rec.group(1), rec.group(2)
+                        piti, path = rec.group(1), rec.group(2)
 
                         try:
-                            ret.append_entry(piti, fpath)
+                            ret.append_entry(piti, path)
                         except EmptyPathError:
                             errors.append(f'Line {linenum}: file path cannot be empty')
-                        except DuplicatedPitiError:
-                            errors.append(f'Line {linenum}: duplicated key: {piti}')
-                        except DuplicatedPathError:
-                            errors.append(f'Line {linenum}: duplicated path: {RLB}{fpath}{RRB}')
 
                     else:
                         errors.append(f'Line {linenum}: parsing error: {RLB}{line}{RRB}')
@@ -521,7 +528,7 @@ def main():
 
     inventory = Inventory()
     inventory.ignore_hidden = not options.all
-    inventory.ignore_dup = True
+    inventory.ignore_duplicated_path = True
 
     for t, e in targets:
         inventory.append(t, expand=e)
@@ -563,14 +570,14 @@ def main():
         for op in op_list:
             print(op)
 
-        info('WIP, exit')
-        exit()
-
         if not op_list:
             info('No change')
             break
 
         print_op_list(op_list)
+
+        info('WIP, exit')
+        exit()
 
         user_confirm = prompt_confirm('Continue?', ('yes', 'edit', 'redo', 'quit'))
         if user_confirm == 'quit':
