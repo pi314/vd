@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: Rewrite program flow with state machine
-#####> The prompt-to-user flow seems too complex for while+continue/break
 #TODO: Generate OP list
 #TODO: Refine parse error message, because vim's content disappears after exit
 #TODO: Comment ('#') a line to untrack an entry
@@ -10,9 +8,9 @@
 #TODO: -r/--recursive, with depth limit?
 
 # Vim related
-#TODO: Set default mapping for J/K to move entry downward/upward
+#TODO: nnoremap J/K to move entry downward/upward
 #TODO: vim default config
-#TODO: Print hints on top
+#TODO: Print some hints on top
 #TODO: Respect LS_COLORS
 
 # Enhancement
@@ -38,9 +36,6 @@ import tempfile
 
 from os.path import basename, join, exists, isdir, isfile, relpath, normpath, split
 from math import ceil, log10
-
-
-options = None
 
 
 # =============================================================================
@@ -144,7 +139,7 @@ class Inventory:
     def __contains__(self, path):
         return path in self.path_index
 
-    def append_entry(self, piti, path):
+    def append_entry(self, piti, path, linenum=None):
         if not path:
             raise EmptyPathError()
 
@@ -225,26 +220,168 @@ def normalize_path(path):
 
     return upath
 
-    # upath = relpath(path)
-    # if path.startswith('/'):
-    #     relroot = relpath('/')
-    #     upath = upath[len(relroot):]
-    # else:
-    #     upath = './' + upath
-    #
-    # if isdir(path):
-    #     upath += '/'
-    #
-    # return upath
+
+class UserSelection:
+    def __init__(self, options):
+        self.options = dict()
+        self.options[''] = options[0]
+        for o in options:
+            self.options[o[0]] = o
+            self.options[o[0].upper()] = o
+            self.options[o] = o
+            self.options[o.upper()] = o
+
+        self.selected = None
+
+    def select(self, o):
+        if o not in self.options:
+            raise ValueError('Invalid option: ' + o)
+
+        self.selected = self.options[o]
+
+    def __eq__(self, other):
+        if other not in self.options:
+            raise ValueError('Invalid option: ' + other)
+
+        return self.selected == other
+
+    def __str__(self):
+        return self.selected
+
+
+def prompt_confirm(prompt_text, options):
+    options = [o.lower() for o in options]
+
+    us = UserSelection(options)
+
+    stdin_backup = sys.stdin
+    stdout_backup = sys.stdout
+    stderr_backup = sys.stderr
+    sys.stdin = open('/dev/tty')
+    sys.stdout = open('/dev/tty', 'w')
+    sys.stderr = open('/dev/tty', 'w')
+
+    try:
+        options[0] = options[0][0].upper() + options[0][1:]
+
+        while True:
+            print(prompt_text + ' '
+                    + '['
+                    + ' / '.join('({}){}'.format(o[0], o[1:]) for o in options)
+                    + ']', end=' ')
+
+            try:
+                us.select(input().strip())
+            except ValueError as e:
+                continue
+
+            break
+
+    except KeyboardInterrupt:
+        print(black('KeyboardInterrupt'))
+        exit(1)
+
+    except EOFError:
+        us.select('')
+
+    sys.stdin = stdin_backup
+    sys.stdout = stdout_backup
+    sys.stderr = stderr_backup
+
+    return us
 
 
 # =============================================================================
 # Chaos
 # =============================================================================
 
-def calculate_inventory_diff(old, new):
-    ret = []
+def pretty_print_operand(level ,color, prompt, path):
+    level(color(prompt) + color('[') + path + color(']'))
 
+
+def apply_op_list(op_list):
+    for op in op_list:
+        if op[0] == 'remove':
+            # dir: shutil.rmtree()
+            # file: os.remove()
+            pretty_print_operand(info, red, '(dry)Removing:', red(op[1] + ('/' if isdir(op[1]) else '')))
+
+        elif op[0] == 'rename':
+            # shutil.move()
+            pretty_print_operand(info, yellow, '(dry)Renaming:', yellow(op[1]))
+            pretty_print_operand(info, yellow, '(dry)========>', yellow(op[2]))
+
+        else:
+            debug('(dry)', op)
+
+
+# =============================================================================
+# "Step" functions
+# -----------------------------------------------------------------------------
+# Step functions have to return a tuple containing
+# [0] the next step function to be invoked, and
+# [1:] function arguments
+#
+# Some step functions have to relay arguments for the next step function,
+# although they are not going to use it at all.
+# =============================================================================
+
+def step_vim_edit_inventory(inventory):
+    with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
+        # Write inventory into tempfile
+        with open(tf.name, mode='w', encoding='utf8') as f:
+            inventory.build_index()
+            for piti, path in inventory.content:
+                f.write(f'{piti}\t{path}\n')
+            f.flush()
+
+        # Invoke vim to edit item list
+        sub.call([
+            'vim', tf.name,
+            '+set nonu',
+            '+set syntax=python',
+            '+set tabstop=8'],
+            stdin=open('/dev/tty')
+            )
+
+        # Parse tempfile content
+        new_inventory = Inventory()
+        errors = []
+        with open(tf.name, mode='r', encoding='utf8') as f:
+            for linenum, line in enumerate(f, start=1):
+                line = line.rstrip('\n')
+
+                if not line:
+                    continue
+
+                rec = RegexCache(line)
+
+                if rec.match(r'^(#?\d+)\t(.*)$'):
+                    piti, path = rec.group(1), rec.group(2)
+
+                    try:
+                        new_inventory.append_entry(piti, path, linenum=linenum)
+                    except EmptyPathError:
+                        errors.append(f'Line {linenum}: file path cannot be empty')
+
+                else:
+                    errors.append(f'Line {linenum}: parsing error: {RLB}{line}{RRB}')
+
+        if errors:
+            for e in errors:
+                error(e)
+
+            user_confirm = prompt_confirm('Edit again?', ['edit', 'quit'])
+            if user_confirm == 'edit':
+                print()
+                return (step_vim_edit_inventory, inventory)
+
+            return (exit, 1)
+
+    return (step_calculate_inventory_diff, inventory, new_inventory)
+
+
+def step_calculate_inventory_diff(old, new):
     debug('==== inventory (old) ====')
     for opiti, opath in old.content:
         debug((opiti, opath))
@@ -259,48 +396,53 @@ def calculate_inventory_diff(old, new):
     for npiti, path in new.content:
         if npiti in piti_set:
             errors.append(f'Duplicated key: {npiti}')
-
         else:
             piti_set.add(npiti)
 
         if path in path_set:
             errors.append(f'Duplicated path: {RLB}{path}{RRB}')
-
         else:
             path_set.add(path)
 
     if errors:
         for e in errors:
             error(e)
-        exit(1) # TODO: prompt for re-edit
+
+        user_confirm = prompt_confirm('Edit again?', ['edit', 'quit'])
+        if user_confirm == 'edit':
+            print()
+            return (step_vim_edit_inventory, old)
+
+        return (exit, 1)
+
+    op_list = []
 
     for opiti, opath in old.content:
         npath = new.get_path_by_piti(opiti)
-
         if not npath:
             if new.get_path_by_piti('#' + opiti) is not None:
-                ret.append(('untrack', opiti))
+                op_list.append(('untrack', opiti))
             else:
-                ret.append(('remove', opath))
+                op_list.append(('remove', opath))
 
         elif opath != npath:
-            ret.append(('rename', opath, npath))
+            op_list.append(('rename', opath, npath))
 
     for npiti, npath in new.content:
         if npiti.startswith('#'):
             continue
 
         if old.get_path_by_piti(npiti) is None:
-            ret.append(('unknown', npiti, npath))
+            op_list.append(('unknown', npiti, npath))
 
-    return ret
-
-
-def pretty_print_operand(level ,color, prompt, path):
-    level(color(prompt) + color('[') + path + color(']'))
+    return (step_print_op_list, old, new, op_list)
 
 
-def print_op_list(op_list):
+def step_print_op_list(old, new, op_list):
+    if not op_list:
+        info('No change')
+        return
+
     for op in op_list:
         if op[0] == 'remove':
             p = op[1]
@@ -331,147 +473,14 @@ def print_op_list(op_list):
         else:
             info(op)
 
-
-def apply_op_list(op_list):
-    for op in op_list:
-        if op[0] == 'remove':
-            # dir: shutil.rmtree()
-            # file: os.remove()
-            pretty_print_operand(info, red, '(dry)Removing:', red(op[1] + ('/' if isdir(op[1]) else '')))
-
-        elif op[0] == 'rename':
-            # shutil.move()
-            pretty_print_operand(info, yellow, '(dry)Renaming:', yellow(op[1]))
-            pretty_print_operand(info, yellow, '(dry)========>', yellow(op[2]))
-
-        else:
-            debug('(dry)', op)
+    info('WIP, exit')
 
 
-def vim_edit_inventory(inventory):
-    while True:
-        with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
-            # Write inventory into tempfile
-            with open(tf.name, mode='w', encoding='utf8') as f:
-                inventory.build_index()
-                for piti, path in inventory.content:
-                    f.write(f'{piti}\t{path}\n')
-                f.flush()
-
-            # Invoke vim to edit item list
-            sub.call([
-                'vim', tf.name,
-                '+set nonu',
-                '+set syntax=python',
-                '+set tabstop=8'],
-                stdin=open('/dev/tty')
-                )
-
-            # Parse tempfile content
-            ret = Inventory()
-            errors = []
-            with open(tf.name, mode='r', encoding='utf8') as f:
-                for linenum, line in enumerate(f, start=1):
-                    line = line.rstrip('\n')
-
-                    if not line:
-                        continue
-
-                    rec = RegexCache(line)
-
-                    if rec.match(r'^(#?\d+)\t(.*)$'):
-                        piti, path = rec.group(1), rec.group(2)
-
-                        try:
-                            ret.append_entry(piti, path)
-                        except EmptyPathError:
-                            errors.append(f'Line {linenum}: file path cannot be empty')
-
-                    else:
-                        errors.append(f'Line {linenum}: parsing error: {RLB}{line}{RRB}')
-
-            if errors:
-                for e in errors:
-                    error(e)
-
-                user_confirm = prompt_confirm('Edit again?', ['edit', 'quit'])
-                if user_confirm == 'edit':
-                    print()
-                    continue
-
-                exit(1)
-
-        break
-
-    return ret
-
-
-class UserConfirm:
-    def __init__(self, options):
-        self.options = set(options)
-        self.selected = None
-
-    def __eq__(self, other):
-        if other not in self.options:
-            raise ValueError('Invalid option: ' + other)
-
-        return self.selected == other
-
-
-def prompt_confirm(prompt_text, options):
-    options = [o.lower() for o in options]
-
-    uc = UserConfirm(options)
-
-    options_abbr_map = dict()
-    options_abbr_map.update({o[0] : o for o in options})
-    options_abbr_map.update({o[0].upper() : o for o in options})
-
-    stdin_backup = sys.stdin
-    stdout_backup = sys.stdout
-    stderr_backup = sys.stderr
-    sys.stdin = open('/dev/tty')
-    sys.stdout = open('/dev/tty', 'w')
-    sys.stderr = open('/dev/tty', 'w')
-
-    try:
-        user_confirm = None
-
-        options[0] = options[0][0].upper() + options[0][1:]
-
-        while user_confirm is None:
-            print(prompt_text + ' '
-                    + '['
-                    + ' / '.join('({}){}'.format(o[0], o[1:]) for o in options)
-                    + ']', end=' ')
-            user_confirm = input().strip().lower()
-
-            if not user_confirm:
-                user_confirm = options[0][0].lower()
-
-            if user_confirm not in options_abbr_map:
-                user_confirm = None
-                continue
-
-    except KeyboardInterrupt:
-        print(black('KeyboardInterrupt'))
-        exit(1)
-
-    except EOFError:
-        user_confirm = 'y'
-
-    sys.stdin = stdin_backup
-    sys.stdout = stdout_backup
-    sys.stderr = stderr_backup
-
-    uc.selected = options_abbr_map[user_confirm]
-
-    return uc
-
+# =============================================================================
+# Main function
+# =============================================================================
 
 def main():
-    global options
-
     parser = argparse.ArgumentParser(
         prog='vd',
         description='\n'.join((
@@ -516,12 +525,10 @@ def main():
 
     for target in options.targets:
         targets.append((target, True))
-        # inventory.append(target, expand=True)
 
     if not sys.stdin.isatty():
         for line in sys.stdin:
             targets.append((line.rstrip('\n'), False))
-            # inventory.append(line.rstrip('\n'), expand=False)
 
     if not targets:
         targets.append(('.', True))
@@ -546,6 +553,8 @@ def main():
         info('No targets to edit')
         exit(0)
 
+    inventory.build_index()
+
     # =========================================================================
     # Main loop
     # =========================================================================
@@ -560,38 +569,35 @@ def main():
     # 5.y. if user say "y" (yes) or enter, apply the OP list
     # 5.*. keep asking until recognized option is selected or Ctrl-C is pressed
 
-    while True:
-        inventory.build_index()
+    def name(a):
+        try:
+            return a.__name__
+        except AttributeError:
+            return a
 
-        veinventory = vim_edit_inventory(inventory)
+    prev_call = None
+    next_call = (step_vim_edit_inventory, inventory)
+    while next_call:
+        func, *args = next_call
+        try:
+            next_call = func(*args)
+            prev_call = (func, *args)
+        except TypeError as e:
+            error(e)
+            error(f'prev_call.func = {name(prev_call[0])}')
+            error(f'prev_call.args = (')
+            for a in prev_call[1:]:
+                error(f'    {repr(a)}')
+            error(')')
 
-        op_list = calculate_inventory_diff(inventory, veinventory)
+            error()
+            error(f'next_call.func = {name(next_call[0])}')
+            error(f'next_call.args = (')
+            for a in next_call[1:]:
+                error(f'    {repr(a)}')
+            error(')')
 
-        for op in op_list:
-            print(op)
-
-        if not op_list:
-            info('No change')
-            break
-
-        print_op_list(op_list)
-
-        info('WIP, exit')
-        exit()
-
-        user_confirm = prompt_confirm('Continue?', ('yes', 'edit', 'redo', 'quit'))
-        if user_confirm == 'quit':
-            break
-
-        if user_confirm == 'edit':
-            continue
-
-        if user_confirm == 'redo':
-            stage_new = stage_now
-            continue
-
-        apply_op_list(op_list)
-        break
+            raise e
 
 
 if __name__ == '__main__':
