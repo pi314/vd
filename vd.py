@@ -386,10 +386,16 @@ def step_vim_edit_inventory(base, inventory):
             for e in errors:
                 error(e)
 
-            user_confirm = prompt_confirm('Fix it?', ['redo', 'quit'])
+            user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'])
+            if user_confirm == 'edit':
+                print()
+                return (step_vim_edit_inventory, base, new_inventory)
+
             if user_confirm == 'redo':
                 print()
-                return (step_vim_edit_inventory, base, inventory)
+                return (step_vim_edit_inventory, base, base)
+
+
 
             return (exit, 1)
 
@@ -436,7 +442,11 @@ def step_calculate_inventory_diff(base, new):
         for e in errors:
             error(e)
 
-        user_confirm = prompt_confirm('Fix it?', ['redo', 'quit'])
+        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'])
+        if user_confirm == 'edit':
+            print()
+            return (step_vim_edit_inventory, base, new)
+
         if user_confirm == 'redo':
             print()
             return (step_vim_edit_inventory, base, base)
