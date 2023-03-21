@@ -395,8 +395,6 @@ def step_vim_edit_inventory(base, inventory):
                 print()
                 return (step_vim_edit_inventory, base, base)
 
-
-
             return (exit, 1)
 
     return (step_calculate_inventory_diff, base, new_inventory)
