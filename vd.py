@@ -6,15 +6,18 @@
 #TODO: Comment ('#') a line to untrack an entry
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: -r/--recursive, with depth limit?
+#TODO: refine error() API, centralize common handling
 
 # Vim related
 #TODO: nnoremap J/K to move entry downward/upward
 #TODO: vim default config
 #TODO: Print some hints on top
-#TODO: Respect LS_COLORS
+#TODO: Respect LS_COLORS by utilizing bits in PITI
 
 # Enhancement
 #TODO: If user change dir to .tar (by removing the trailing slash), tar it
+#TODO: Add -e/-E: always expand/not expand path for the first parsing
+#TODO: Provide directives for adding new entries like {file} {dir}
 
 __version__ = '0.0.0'
 
@@ -34,7 +37,7 @@ import subprocess as sub
 import sys
 import tempfile
 
-from os.path import basename, join, exists, isdir, isfile, relpath, normpath, split
+from os.path import basename, join, exists, isdir, isfile, split, realpath, abspath, relpath
 from math import ceil, log10
 
 
@@ -101,13 +104,17 @@ class EmptyPathError(Exception):
     pass
 
 
-class Pair:
-    def __init__(self, piti, path):
+class TrackingEntry:
+    def __init__(self, piti, path, linenum=None):
         # PITI = Path Item Temporary Identifier
         # A temporary unique number that associated to a path for path operation
 
         self.piti = piti
         self.path = path
+        self.linenum = linenum
+
+    def __eq__(self, other):
+        return (self.piti, self.path) == (other.piti, other.path)
 
     def __iter__(self):
         return iter((self.piti, self.path))
@@ -119,12 +126,13 @@ class Pair:
         return repr((self.piti, self.path))
 
 
+
 class Inventory:
     def __init__(self):
         self.ignore_hidden = False
         self.ignore_duplicated_path = False
         self.content = []
-        self.path_index = dict()
+        self.real_path_set = set()
         self.piti_index = dict()
 
     def __len__(self):
@@ -137,31 +145,36 @@ class Inventory:
         return self.content[index]
 
     def __contains__(self, path):
-        return path in self.path_index
+        return path in self.real_path_set
+
+    def __eq__(self, other):
+        if not isinstance(other, Inventory):
+            return False
+
+        return self.content == other.content
 
     def append_entry(self, piti, path, linenum=None):
         if not path:
             raise EmptyPathError()
 
-        upath = ''
+        npath = ''
         if not path.startswith(('./', '/')):
-            upath = './'
+            npath = './'
 
-        upath += path.rstrip('/')
+        npath += path.rstrip('/')
 
         if isdir(path):
-            upath += '/'
+            npath += '/'
 
         if piti and piti not in self.piti_index:
-            self.piti_index[piti] = upath
+            self.piti_index[piti] = npath
 
-        if upath not in self.path_index:
-            self.path_index[upath] = piti
-
+        if realpath(npath) not in self.real_path_set:
+            self.real_path_set.add(realpath(npath))
         elif self.ignore_duplicated_path:
             return
 
-        self.content.append(Pair(piti, upath))
+        self.content.append(TrackingEntry(piti, npath, linenum=linenum))
 
     def _append_path(self, path):
         if basename(path).startswith('.') and self.ignore_hidden:
@@ -209,16 +222,16 @@ def normalize_path(path):
     if not path:
         return ''
 
-    upath = ''
+    npath = ''
     if not path.startswith(('./', '/')):
-        upath = './'
+        npath = './'
 
-    upath += path
+    npath += path
 
-    if not path.endswith('/') and isdir(upath):
-        upath += '/'
+    if not path.endswith('/') and isdir(npath):
+        npath += '/'
 
-    return upath
+    return npath
 
 
 class UserSelection:
@@ -326,11 +339,10 @@ def apply_op_list(op_list):
 # although they are not going to use it at all.
 # =============================================================================
 
-def step_vim_edit_inventory(inventory):
+def step_vim_edit_inventory(base, inventory):
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
-            inventory.build_index()
             for piti, path in inventory.content:
                 f.write(f'{piti}\t{path}\n')
             f.flush()
@@ -364,6 +376,9 @@ def step_vim_edit_inventory(inventory):
                     except EmptyPathError:
                         errors.append(f'Line {linenum}: file path cannot be empty')
 
+                elif exists(line):
+                    new_inventory.append_entry(None, line, linenum=linenum)
+
                 else:
                     errors.append(f'Line {linenum}: parsing error: {RLB}{line}{RRB}')
 
@@ -371,53 +386,66 @@ def step_vim_edit_inventory(inventory):
             for e in errors:
                 error(e)
 
-            user_confirm = prompt_confirm('Edit again?', ['edit', 'quit'])
-            if user_confirm == 'edit':
+            user_confirm = prompt_confirm('Fix it?', ['redo', 'quit'])
+            if user_confirm == 'redo':
                 print()
-                return (step_vim_edit_inventory, inventory)
+                return (step_vim_edit_inventory, base, inventory)
 
             return (exit, 1)
 
-    return (step_calculate_inventory_diff, inventory, new_inventory)
+    return (step_calculate_inventory_diff, base, new_inventory)
 
 
-def step_calculate_inventory_diff(old, new):
-    debug('==== inventory (old) ====')
-    for opiti, opath in old.content:
+def step_calculate_inventory_diff(base, new):
+    debug(magenta('==== inventory (base) ===='))
+    for opiti, opath in base.content:
         debug((opiti, opath))
     debug('-------------------------')
     for npiti, npath in new.content:
         debug((npiti, npath))
-    debug('==== inventory (new) ====')
+    debug(magenta('==== inventory (new) ===='))
 
     piti_set = set()
     path_set = set()
     errors = []
+    # Sanity check of new inventory content
     for npiti, path in new.content:
+        if (npiti is None) or (npiti.startswith('#')):
+            continue
+
+        # Check duplicated piti
         if npiti in piti_set:
             errors.append(f'Duplicated key: {npiti}')
         else:
             piti_set.add(npiti)
 
-        if path in path_set:
+        # Check duplicated path
+        if realpath(path) in path_set:
             errors.append(f'Duplicated path: {RLB}{path}{RRB}')
+            if realpath(path) != abspath(path):
+                nrrp = normalize_path(relpath(realpath(path)))
+                errors.append(f'Real path ====== {RLB}{nrrp}{RRB}')
         else:
-            path_set.add(path)
+            path_set.add(realpath(path))
+
+        # Check inexisting piti
+        if base.get_path_by_piti(npiti) is None:
+            errors.append(f'Invalid key: {npiti}')
 
     if errors:
         for e in errors:
             error(e)
 
-        user_confirm = prompt_confirm('Edit again?', ['edit', 'quit'])
-        if user_confirm == 'edit':
+        user_confirm = prompt_confirm('Fix it?', ['redo', 'quit'])
+        if user_confirm == 'redo':
             print()
-            return (step_vim_edit_inventory, old)
+            return (step_vim_edit_inventory, base, base)
 
         return (exit, 1)
 
     op_list = []
 
-    for opiti, opath in old.content:
+    for opiti, opath in base.content:
         npath = new.get_path_by_piti(opiti)
         if not npath:
             if new.get_path_by_piti('#' + opiti) is not None:
@@ -425,21 +453,25 @@ def step_calculate_inventory_diff(old, new):
             else:
                 op_list.append(('remove', opath))
 
-        elif opath != npath:
+        elif realpath(opath) != realpath(npath):
             op_list.append(('rename', opath, npath))
 
     for npiti, npath in new.content:
+        if npiti is None:
+            op_list.append(('track', npath))
+            continue
+
         if npiti.startswith('#'):
             continue
 
-        if old.get_path_by_piti(npiti) is None:
+        if base.get_path_by_piti(npiti) is None:
             op_list.append(('unknown', npiti, npath))
 
-    return (step_print_op_list, old, new, op_list)
+    return (step_print_op_list, base, new, op_list)
 
 
-def step_print_op_list(old, new, op_list):
-    if not op_list:
+def step_print_op_list(base, new, op_list):
+    if base == new:
         info('No change')
         return
 
@@ -472,6 +504,18 @@ def step_print_op_list(old, new, op_list):
 
         else:
             info(op)
+
+    user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
+    if user_confirm == 'quit':
+        return (exit, 1)
+
+    if user_confirm == 'edit':
+        print()
+        return (step_vim_edit_inventory, base, new)
+
+    elif user_confirm == 'redo':
+        print()
+        return (step_vim_edit_inventory, base, base)
 
     info('WIP, exit')
 
@@ -511,7 +555,7 @@ def main():
     options = parser.parse_args()
 
     if not sys.stdout.isatty() or not sys.stderr.isatty():
-        error('stdout and stderr must be tty')
+        error('Both stdout and stderr must be tty')
         exit(1)
 
     # =========================================================================
@@ -576,7 +620,7 @@ def main():
             return a
 
     prev_call = None
-    next_call = (step_vim_edit_inventory, inventory)
+    next_call = (step_vim_edit_inventory, inventory, inventory)
     while next_call:
         func, *args = next_call
         try:
