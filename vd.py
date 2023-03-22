@@ -197,9 +197,13 @@ class Inventory:
             raise Exception('Unknown file type')
 
     def build_index(self):
+        if not self.content:
+            return
+
         self.piti_index = dict()
 
-        for i, entry in enumerate(self.content, start=10 ** ceil(log10(len(self.content))) + 1):
+        start = 10 ** (len(str(len(self.content)))) + 1
+        for i, entry in enumerate(self.content, start=start):
             entry.piti = str(i)
             self.piti_index[entry.piti] = entry.path
 
@@ -461,7 +465,7 @@ def step_calculate_inventory_diff(base, new):
 def step_print_op_list(base, new, op_list):
     if base == new:
         info('No change')
-        return
+        return (exit, 0)
 
     if not op_list:
         newnew = Inventory()
@@ -469,6 +473,11 @@ def step_print_op_list(base, new, op_list):
             if piti is None or not piti.startswith('#'):
                 newnew.append(path)
         newnew.build_index()
+
+        if not newnew:
+            print('No targets to edit')
+            return (exit, 1)
+
         return (step_vim_edit_inventory, newnew, newnew)
 
     for op in op_list:
