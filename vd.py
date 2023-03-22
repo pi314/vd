@@ -157,14 +157,7 @@ class Inventory:
         if not path:
             raise EmptyPathError()
 
-        npath = ''
-        if not path.startswith(('./', '/')):
-            npath = './'
-
-        npath += path.rstrip('/')
-
-        if isdir(path):
-            npath += '/'
+        npath = normalize_path(path)
 
         if piti and piti not in self.piti_index:
             self.piti_index[piti] = npath
@@ -223,7 +216,7 @@ def normalize_path(path):
         return ''
 
     npath = ''
-    if not path.startswith(('./', '/')):
+    if not path.startswith(('/', './', '../')) and path not in ('.', '..'):
         npath = './'
 
     npath += path
