@@ -6,7 +6,7 @@
 #TODO: Comment ('#') a line to untrack an entry
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: -r/--recursive, with depth limit?
-#TODO: refine error() API, centralize common handling
+#TODO: Refine error() API, centralize common handling
 
 # Vim related
 #TODO: nnoremap J/K to move entry downward/upward
@@ -449,24 +449,11 @@ def step_calculate_inventory_diff(base, new):
     for opiti, opath in base.content:
         npath = new.get_path_by_piti(opiti)
         if not npath:
-            if new.get_path_by_piti('#' + opiti) is not None:
-                op_list.append(('untrack', opiti))
-            else:
+            if new.get_path_by_piti('#' + opiti) is None:
                 op_list.append(('remove', opath))
 
         elif realpath(opath) != realpath(npath):
             op_list.append(('rename', opath, npath))
-
-    for npiti, npath in new.content:
-        if npiti is None:
-            op_list.append(('track', npath))
-            continue
-
-        if npiti.startswith('#'):
-            continue
-
-        if base.get_path_by_piti(npiti) is None:
-            op_list.append(('unknown', npiti, npath))
 
     return (step_print_op_list, base, new, op_list)
 
@@ -475,6 +462,14 @@ def step_print_op_list(base, new, op_list):
     if base == new:
         info('No change')
         return
+
+    if not op_list:
+        newnew = Inventory()
+        for piti, path in new:
+            if piti is None or not piti.startswith('#'):
+                newnew.append(path)
+        newnew.build_index()
+        return (step_vim_edit_inventory, newnew, newnew)
 
     for op in op_list:
         if op[0] == 'remove':
