@@ -3,7 +3,6 @@
 # Mandatory
 #TODO: Generate OP list
 #TODO: Refine parse error message, because vim's content disappears after exit
-#TODO: Comment ('#') a line to untrack an entry
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: -r/--recursive, with depth limit?
 #TODO: Refine error() API, centralize common handling
@@ -309,22 +308,6 @@ def pretty_print_operand(level ,color, prompt, path):
     level(color(prompt) + color('[') + path + color(']'))
 
 
-def apply_op_list(op_list):
-    for op in op_list:
-        if op[0] == 'remove':
-            # dir: shutil.rmtree()
-            # file: os.remove()
-            pretty_print_operand(info, red, '(dry)Removing:', red(op[1] + ('/' if isdir(op[1]) else '')))
-
-        elif op[0] == 'rename':
-            # shutil.move()
-            pretty_print_operand(info, yellow, '(dry)Renaming:', yellow(op[1]))
-            pretty_print_operand(info, yellow, '(dry)========>', yellow(op[2]))
-
-        else:
-            debug('(dry)', op)
-
-
 # =============================================================================
 # "Step" functions
 # -----------------------------------------------------------------------------
@@ -375,6 +358,9 @@ def step_vim_edit_inventory(base, inventory):
 
                 elif exists(line):
                     new_inventory.append_entry(None, line, linenum=linenum)
+
+                elif line.startswith('#'):
+                    continue
 
                 else:
                     errors.append(f'Line {linenum}: parsing error: {RLB}{line}{RRB}')
@@ -448,26 +434,26 @@ def step_calculate_inventory_diff(base, new):
 
         return (exit, 1)
 
-    op_list = []
+    change_list = []
 
     for opiti, opath in base.content:
         npath = new.get_path_by_piti(opiti)
         if not npath:
             if new.get_path_by_piti('#' + opiti) is None:
-                op_list.append(('remove', opath))
+                change_list.append(('remove', opath))
 
         elif realpath(opath) != realpath(npath):
-            op_list.append(('rename', opath, npath))
+            change_list.append(('rename', opath, npath))
 
-    return (step_print_op_list, base, new, op_list)
+    return (step_print_change_list, base, new, change_list)
 
 
-def step_print_op_list(base, new, op_list):
+def step_print_change_list(base, new, change_list):
     if base == new:
         info('No change')
         return (exit, 0)
 
-    if not op_list:
+    if not change_list:
         newnew = Inventory()
         for piti, path in new:
             if piti is None or not piti.startswith('#'):
@@ -476,17 +462,17 @@ def step_print_op_list(base, new, op_list):
 
         if not newnew:
             print('No targets to edit')
-            return (exit, 1)
+            return (exit, 0)
 
         return (step_vim_edit_inventory, newnew, newnew)
 
-    for op in op_list:
-        if op[0] == 'remove':
-            p = op[1]
+    for change in change_list:
+        if change[0] == 'remove':
+            p = change[1]
             pretty_print_operand(info, red, 'Remove:', p)
 
-        elif op[0] == 'rename':
-            a, b = (op[1], op[2])
+        elif change[0] == 'rename':
+            a, b = (change[1], change[2])
             s = difflib.SequenceMatcher(None, a, b)
             A, B = ('', '')
             for tag, i1, i2, j1, j2 in s.get_opcodes():
@@ -501,14 +487,14 @@ def step_print_op_list(base, new, op_list):
                     B += green(b[j1:j2])
 
                 elif tag == 'replace':
-                    A += yellow(a[i1:i2])
-                    B += yellow(b[j1:j2])
+                    A += red(a[i1:i2])
+                    B += green(b[j1:j2])
 
             pretty_print_operand(info, yellow, 'Rename:', A)
             pretty_print_operand(info, yellow, '======>', B)
 
         else:
-            info(op)
+            info(change)
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
     if user_confirm == 'quit':
@@ -521,6 +507,24 @@ def step_print_op_list(base, new, op_list):
     elif user_confirm == 'redo':
         print()
         return (step_vim_edit_inventory, base, base)
+
+    return (step_calculate_op_list, base, new, change_list)
+
+
+def step_calculate_op_list(base, new, change_list):
+    for change in change_list:
+        if change[0] == 'remove':
+            # dir: shutil.rmtree()
+            # file: os.remove()
+            pretty_print_operand(info, red, '(dry)Removing:', change[1])
+
+        elif change[0] == 'rename':
+            # shutil.move()
+            pretty_print_operand(info, yellow, '(dry)Renaming:', change[1])
+            pretty_print_operand(info, yellow, '(dry)========>', change[2])
+
+        else:
+            debug('(dry)', change)
 
     info('WIP, exit')
 
