@@ -32,12 +32,14 @@ import itertools
 import math
 import os
 import re
+import readline
 import subprocess as sub
 import sys
 import tempfile
 
-from os.path import basename, join, exists, isdir, isfile, split, realpath, abspath, relpath
 from math import ceil, log10
+from os.path import basename, join, exists, isdir, isfile, split, realpath, abspath, relpath
+from unicodedata import east_asian_width
 
 
 # =============================================================================
@@ -72,6 +74,13 @@ blue = color_to(34)
 magenta = color_to(35)
 cyan = color_to(36)
 white = color_to(37)
+red_bg =        color_to('41')
+green_bg =      color_to('42')
+yellow_bg =     color_to('43')
+blue_bg =       color_to('44')
+magenta_bg =    color_to('45')
+cyan_bg =       color_to('46')
+white_bg =      color_to('47')
 nocolor = lambda s: '\033[m' + s
 
 RLB = red('[')
@@ -93,6 +102,10 @@ def info(*args, **kwargs):
 
 def error(*args, **kwargs):
     print_stderr(red('[Error]'), *args)
+
+
+def str_width(s):
+    return sum(1 + (east_asian_width(c) in 'WF') for c in s)
 
 
 # =============================================================================
@@ -291,7 +304,10 @@ def prompt_confirm(prompt_text, options):
         exit(1)
 
     except EOFError:
+        print()
         us.select('')
+
+    print()
 
     sys.stdin = stdin_backup
     sys.stdout = stdout_backup
@@ -481,14 +497,19 @@ def step_print_change_list(base, new, change_list):
                     B += b[j1:j2]
 
                 elif tag == 'delete':
-                    A += red(a[i1:i2])
+                    A += red_bg(a[i1:i2])
+                    B += ' ' * str_width(a[i1:i2])
 
                 elif tag == 'insert':
-                    B += green(b[j1:j2])
+                    A += ' ' * str_width(b[j1:j2])
+                    B += green_bg(b[j1:j2])
 
                 elif tag == 'replace':
-                    A += red(a[i1:i2])
-                    B += green(b[j1:j2])
+                    wa = str_width(a[i1:i2])
+                    wb = str_width(b[j1:j2])
+                    w = max(wa, wb)
+                    A += red_bg(a[i1:i2]) + (' ' * (w - wa))
+                    B += green_bg(b[j1:j2]) + (' ' * (w - wb))
 
             pretty_print_operand(info, yellow, 'Rename:', A)
             pretty_print_operand(info, yellow, '======>', B)
