@@ -44,7 +44,7 @@ from unicodedata import east_asian_width
 
 # =============================================================================
 # Generalized Utilities
-# =============================================================================
+# -----------------------------------------------------------------------------
 
 class RegexCache:
     def __init__(self, text):
@@ -74,13 +74,13 @@ blue = color_to(34)
 magenta = color_to(35)
 cyan = color_to(36)
 white = color_to(37)
-red_bg =        color_to('41')
-green_bg =      color_to('42')
-yellow_bg =     color_to('43')
-blue_bg =       color_to('44')
-magenta_bg =    color_to('45')
-cyan_bg =       color_to('46')
-white_bg =      color_to('47')
+red_bg = color_to('41')
+green_bg = color_to('42')
+yellow_bg = color_to('43')
+blue_bg = color_to('44')
+magenta_bg = color_to('45')
+cyan_bg = color_to('46')
+white_bg = color_to('47')
 nocolor = lambda s: '\033[m' + s
 
 RLB = red('[')
@@ -106,6 +106,83 @@ def error(*args, **kwargs):
 
 def str_width(s):
     return sum(1 + (east_asian_width(c) in 'WF') for c in s)
+
+
+class UserSelection:
+    def __init__(self, options):
+        self.options = dict()
+        self.options[''] = options[0]
+        for o in options:
+            self.options[o[0]] = o
+            self.options[o[0].upper()] = o
+            self.options[o] = o
+            self.options[o.upper()] = o
+
+        self.selected = None
+
+    def select(self, o):
+        if o not in self.options:
+            raise ValueError('Invalid option: ' + o)
+
+        self.selected = self.options[o]
+
+    def __eq__(self, other):
+        if other not in self.options:
+            raise ValueError('Invalid option: ' + other)
+
+        return self.selected == other
+
+    def __str__(self):
+        return self.selected
+
+
+def prompt_confirm(prompt_text, options):
+    options = [o.lower() for o in options]
+
+    us = UserSelection(options)
+
+    stdin_backup = sys.stdin
+    stdout_backup = sys.stdout
+    stderr_backup = sys.stderr
+    sys.stdin = open('/dev/tty')
+    sys.stdout = open('/dev/tty', 'w')
+    sys.stderr = open('/dev/tty', 'w')
+
+    try:
+        options[0] = options[0][0].upper() + options[0][1:]
+
+        while True:
+            print(prompt_text + ' '
+                    + '['
+                    + ' / '.join('({}){}'.format(o[0], o[1:]) for o in options)
+                    + ']', end=' ')
+
+            try:
+                us.select(input().strip())
+            except ValueError as e:
+                continue
+
+            break
+
+    except KeyboardInterrupt:
+        print(black('KeyboardInterrupt'))
+        exit(1)
+
+    except EOFError:
+        print()
+        us.select('')
+
+    print()
+
+    sys.stdin = stdin_backup
+    sys.stdout = stdout_backup
+    sys.stderr = stderr_backup
+
+    return us
+
+# -----------------------------------------------------------------------------
+# Generalized Utilities
+# =============================================================================
 
 
 # =============================================================================
@@ -243,84 +320,7 @@ def normalize_path(path):
     return npath
 
 
-class UserSelection:
-    def __init__(self, options):
-        self.options = dict()
-        self.options[''] = options[0]
-        for o in options:
-            self.options[o[0]] = o
-            self.options[o[0].upper()] = o
-            self.options[o] = o
-            self.options[o.upper()] = o
-
-        self.selected = None
-
-    def select(self, o):
-        if o not in self.options:
-            raise ValueError('Invalid option: ' + o)
-
-        self.selected = self.options[o]
-
-    def __eq__(self, other):
-        if other not in self.options:
-            raise ValueError('Invalid option: ' + other)
-
-        return self.selected == other
-
-    def __str__(self):
-        return self.selected
-
-
-def prompt_confirm(prompt_text, options):
-    options = [o.lower() for o in options]
-
-    us = UserSelection(options)
-
-    stdin_backup = sys.stdin
-    stdout_backup = sys.stdout
-    stderr_backup = sys.stderr
-    sys.stdin = open('/dev/tty')
-    sys.stdout = open('/dev/tty', 'w')
-    sys.stderr = open('/dev/tty', 'w')
-
-    try:
-        options[0] = options[0][0].upper() + options[0][1:]
-
-        while True:
-            print(prompt_text + ' '
-                    + '['
-                    + ' / '.join('({}){}'.format(o[0], o[1:]) for o in options)
-                    + ']', end=' ')
-
-            try:
-                us.select(input().strip())
-            except ValueError as e:
-                continue
-
-            break
-
-    except KeyboardInterrupt:
-        print(black('KeyboardInterrupt'))
-        exit(1)
-
-    except EOFError:
-        print()
-        us.select('')
-
-    print()
-
-    sys.stdin = stdin_backup
-    sys.stdout = stdout_backup
-    sys.stderr = stderr_backup
-
-    return us
-
-
-# =============================================================================
-# Chaos
-# =============================================================================
-
-def pretty_print_operand(level ,color, prompt, path):
+def print_path_with_prompt(level ,color, prompt, path):
     level(color(prompt) + color('[') + path + color(']'))
 
 
@@ -485,7 +485,7 @@ def step_print_change_list(base, new, change_list):
     for change in change_list:
         if change[0] == 'remove':
             p = change[1]
-            pretty_print_operand(info, red, 'Remove:', p)
+            print_path_with_prompt(info, red, 'Remove:', p)
 
         elif change[0] == 'rename':
             a, b = (change[1], change[2])
@@ -511,25 +511,27 @@ def step_print_change_list(base, new, change_list):
                     A += red_bg(a[i1:i2]) + (' ' * (w - wa))
                     B += green_bg(b[j1:j2]) + (' ' * (w - wb))
 
-            pretty_print_operand(info, yellow, 'Rename:', A)
-            pretty_print_operand(info, yellow, '======>', B)
+            print_path_with_prompt(info, yellow, 'Rename:', A)
+            print_path_with_prompt(info, yellow, '======>', B)
 
         else:
             info(change)
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
-    if user_confirm == 'quit':
-        return (exit, 1)
+    if user_confirm == 'yes':
+        return (step_calculate_op_list, base, new, change_list)
 
     if user_confirm == 'edit':
-        print()
         return (step_vim_edit_inventory, base, new)
 
     elif user_confirm == 'redo':
-        print()
         return (step_vim_edit_inventory, base, base)
 
-    return (step_calculate_op_list, base, new, change_list)
+    elif user_confirm == 'quit':
+        return (exit, 1)
+
+    error('Unexpected flow, exit')
+    return (exit, 1)
 
 
 def step_calculate_op_list(base, new, change_list):
@@ -537,12 +539,12 @@ def step_calculate_op_list(base, new, change_list):
         if change[0] == 'remove':
             # dir: shutil.rmtree()
             # file: os.remove()
-            pretty_print_operand(info, red, '(dry)Removing:', change[1])
+            print_path_with_prompt(info, red, '(dry)Removing:', change[1])
 
         elif change[0] == 'rename':
             # shutil.move()
-            pretty_print_operand(info, yellow, '(dry)Renaming:', change[1])
-            pretty_print_operand(info, yellow, '(dry)========>', change[2])
+            print_path_with_prompt(info, yellow, '(dry)Renaming:', change[1])
+            print_path_with_prompt(info, yellow, '(dry)========>', change[2])
 
         else:
             debug('(dry)', change)
@@ -617,7 +619,7 @@ def main():
     has_error = False
     for _, path in inventory.content:
         if not exists(path):
-            pretty_print_operand(error, red, 'File does not exist:', path)
+            print_path_with_prompt(error, red, 'File does not exist:', path)
             has_error = True
 
     if has_error:
