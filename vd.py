@@ -28,18 +28,29 @@ __version__ = '0.0.0'
 import argparse
 import collections
 import difflib
+import functools
 import itertools
 import math
 import os
 import re
 import readline
+import shutil
 import subprocess as sub
 import sys
 import tempfile
+import types
 
+from enum import Enum
 from math import ceil, log10
 from os.path import basename, join, exists, isdir, isfile, split, realpath, abspath, relpath
 from unicodedata import east_asian_width
+
+
+# =============================================================================
+# Global option
+# -----------------------------------------------------------------------------
+
+opt_diff_style = None
 
 
 # =============================================================================
@@ -87,6 +98,11 @@ RLB = red('[')
 RRB = red(']')
 
 
+decolor_regex = re.compile('\033' + r'\[[\d;]*m')
+def decolor(s):
+    return decolor_regex.sub('', s)
+
+
 def print_stderr(*args, **kwargs):
     kwargs['file'] = sys.stderr
     print(*args, **kwargs)
@@ -105,7 +121,7 @@ def error(*args, **kwargs):
 
 
 def str_width(s):
-    return sum(1 + (east_asian_width(c) in 'WF') for c in s)
+    return sum(1 + (east_asian_width(c) in 'WF') for c in decolor(s))
 
 
 class UserSelection:
@@ -324,6 +340,82 @@ def print_path_with_prompt(level ,color, prompt, path):
     level(color(prompt) + color('[') + path + color(']'))
 
 
+@functools.lru_cache
+def screen_width():
+    return shutil.get_terminal_size().columns
+
+
+DiffStyle = Enum('DiffStyle', ['aligned', 'compact'])
+
+
+def pretty_diff_strings(a, b):
+    diff_segments = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        diff_segments.append((tag, a[i1:i2], b[j1:j2]))
+
+    tag_counter = collections.Counter(equal=0, delete=0, insert=0, replace=0)
+    tag_counter.update(s[0] for s in diff_segments)
+    tag_count = types.SimpleNamespace(**tag_counter)
+
+    diff_style = opt_diff_style
+
+    if diff_style is None:
+        if tag_count.replace == 1 and tag_count.delete + tag_count.insert == 0:
+            # Only one replace, the diff is simple
+            diff_style = DiffStyle.compact
+
+        elif tag_count.replace == 0 and tag_count.delete * tag_count.insert == 0:
+            # Only deletes or only inserts, the diff is simple
+            diff_style = DiffStyle.compact
+
+        elif tag_count.replace == 0 and tag_count.delete == 1 and tag_count.insert == 1:
+            # Only one delete and one insert, the diff is ... simple, probably
+            diff_style = DiffStyle.compact
+
+        else:
+            # By default, aligned style is used
+            diff_style = DiffStyle.aligned
+
+            align_width = sum(max(str_width(s[1]), str_width(s[2])) for s in diff_segments)
+            if align_width + str_width('[Info] Rename:[]') > screen_width():
+                # The screen is not wide enough
+                diff_style = DiffStyle.compact
+
+    A = ''
+    B = ''
+    for tag, sa, sb in diff_segments:
+        if tag == 'equal':
+            A += sa
+            B += sb
+
+        elif tag == 'delete':
+            if diff_style == DiffStyle.aligned:
+                A += red_bg(sa)
+                B += ' ' * str_width(sa)
+            else:
+                A += red_bg(sa)
+
+        elif tag == 'insert':
+            if diff_style == DiffStyle.aligned:
+                A += ' ' * str_width(sb)
+                B += green_bg(sb)
+            else:
+                B += green_bg(sb)
+
+        elif tag == 'replace':
+            if diff_style == DiffStyle.aligned:
+                wa = str_width(sa)
+                wb = str_width(sb)
+                w = max(wa, wb)
+                A += red_bg(sa) + (' ' * (w - wa))
+                B += green_bg(sb) + (' ' * (w - wb))
+            else:
+                A += red_bg(sa)
+                B += green_bg(sb)
+
+    return (A, B)
+
+
 # =============================================================================
 # "Step" functions
 # -----------------------------------------------------------------------------
@@ -488,29 +580,7 @@ def step_print_change_list(base, new, change_list):
             print_path_with_prompt(info, red, 'Remove:', p)
 
         elif change[0] == 'rename':
-            a, b = (change[1], change[2])
-            s = difflib.SequenceMatcher(None, a, b)
-            A, B = ('', '')
-            for tag, i1, i2, j1, j2 in s.get_opcodes():
-                if tag == 'equal':
-                    A += a[i1:i2]
-                    B += b[j1:j2]
-
-                elif tag == 'delete':
-                    A += red_bg(a[i1:i2])
-                    B += ' ' * str_width(a[i1:i2])
-
-                elif tag == 'insert':
-                    A += ' ' * str_width(b[j1:j2])
-                    B += green_bg(b[j1:j2])
-
-                elif tag == 'replace':
-                    wa = str_width(a[i1:i2])
-                    wb = str_width(b[j1:j2])
-                    w = max(wa, wb)
-                    A += red_bg(a[i1:i2]) + (' ' * (w - wa))
-                    B += green_bg(b[j1:j2]) + (' ' * (w - wb))
-
+            A, B = pretty_diff_strings(change[1], change[2])
             print_path_with_prompt(info, yellow, 'Rename:', A)
             print_path_with_prompt(info, yellow, '======>', B)
 
@@ -557,6 +627,8 @@ def step_calculate_op_list(base, new, change_list):
 # =============================================================================
 
 def main():
+    global opt_diff_style
+
     parser = argparse.ArgumentParser(
         prog='vd',
         description='\n'.join((
@@ -581,6 +653,10 @@ def main():
             default=False,
             help='Include hidden paths')
 
+    parser.add_argument('-d', '--diff-style', choices=DiffStyle,
+            type=lambda x: DiffStyle[x],
+            help='Specify diff style')
+
     parser.add_argument('targets', nargs='*',
             help='Paths to edit, directories are expanded')
 
@@ -589,6 +665,8 @@ def main():
     if not sys.stdout.isatty() or not sys.stderr.isatty():
         error('Both stdout and stderr must be tty')
         exit(1)
+
+    opt_diff_style = options.diff_style
 
     # =========================================================================
     # Collect initial targets
