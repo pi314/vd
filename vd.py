@@ -2,6 +2,7 @@
 
 # Mandatory
 #TODO: Generate OP list
+#TODO: Review symlink handling, should I treat a symlink to dir as file or dir?
 #TODO: Refine parse error message, because vim's content disappears after exit
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: -r/--recursive, with depth limit?
@@ -250,7 +251,7 @@ class Inventory:
         return self.content[index]
 
     def __contains__(self, path):
-        return path in self.real_path_set
+        return realpath(path) in self.real_path_set
 
     def __eq__(self, other):
         if not isinstance(other, Inventory):
@@ -431,8 +432,15 @@ def step_vim_edit_inventory(base, inventory):
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
-            for piti, path in inventory.content:
-                f.write(f'{piti}\t{path}\n')
+            if isinstance(inventory, Inventory):
+                for piti, path in inventory:
+                    if piti is None:
+                        f.write(f'{path}\n')
+                    else:
+                        f.write(f'{piti}\t{path}\n')
+            else:
+                for line in inventory:
+                    f.write(f'{line}\n')
             f.flush()
 
         # Invoke vim to edit item list
@@ -446,10 +454,12 @@ def step_vim_edit_inventory(base, inventory):
 
         # Parse tempfile content
         new_inventory = Inventory()
+        lines = []
         errors = []
         with open(tf.name, mode='r', encoding='utf8') as f:
             for linenum, line in enumerate(f, start=1):
                 line = line.rstrip('\n')
+                lines.append(line)
 
                 if not line:
                     continue
@@ -471,22 +481,21 @@ def step_vim_edit_inventory(base, inventory):
                     continue
 
                 else:
-                    errors.append(f'Line {linenum}: parsing error: {RLB}{line}{RRB}')
+                    t = 'dir' if line.endswith('/') else 'file'
+                    errors.append(f'Line {linenum}: {t} does not exist: {RLB}{line}{RRB}')
 
-        if errors:
-            for e in errors:
-                error(e)
+    if errors:
+        for e in errors:
+            error(e)
 
-            user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'])
-            if user_confirm == 'edit':
-                print()
-                return (step_vim_edit_inventory, base, new_inventory)
+        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'])
+        if user_confirm == 'edit':
+            return (step_vim_edit_inventory, base, lines)
 
-            if user_confirm == 'redo':
-                print()
-                return (step_vim_edit_inventory, base, base)
+        if user_confirm == 'redo':
+            return (step_vim_edit_inventory, base, base)
 
-            return (exit, 1)
+        return (exit, 1)
 
     return (step_calculate_inventory_diff, base, new_inventory)
 
@@ -504,28 +513,50 @@ def step_calculate_inventory_diff(base, new):
     path_set = set()
     errors = []
     # Sanity check of new inventory content
-    for npiti, path in new.content:
-        if (npiti is None) or (npiti.startswith('#')):
+    for npiti, npath in new.content:
+        if (npiti is not None) and (npiti.startswith('#')):
             continue
 
         # Check duplicated piti
-        if npiti in piti_set:
+        if (npiti is not None) and (npiti in piti_set):
             errors.append(f'Duplicated key: {npiti}')
         else:
             piti_set.add(npiti)
 
         # Check duplicated path
-        if realpath(path) in path_set:
-            errors.append(f'Duplicated path: {RLB}{path}{RRB}')
-            if realpath(path) != abspath(path):
-                nrrp = normalize_path(relpath(realpath(path)))
-                errors.append(f'Real path ====== {RLB}{nrrp}{RRB}')
+        if realpath(npath) in path_set:
+            errors.append(f'Duplicated path: {RLB}{npath}{RRB}')
+            if realpath(npath) != abspath(npath):
+                nrrp = normalize_path(relpath(realpath(npath)))
+                errors.append(f'Real path =====> {RLB}{nrrp}{RRB}')
         else:
-            path_set.add(realpath(path))
+            path_set.add(realpath(npath))
 
         # Check inexisting piti
-        if base.get_path_by_piti(npiti) is None:
+        if npiti is not None and base.get_path_by_piti(npiti) is None:
             errors.append(f'Invalid key: {npiti}')
+
+    change_list = []
+
+    if not errors:
+        # Calculate change list
+        for opiti, opath in base:
+            npath = new.get_path_by_piti(opiti)
+            if not npath:
+                if new.get_path_by_piti('#' + opiti) is not None:
+                    change_list.append(('untrack', opath))
+                elif opath not in new:
+                    change_list.append(('remove', opath))
+
+            elif realpath(opath) != realpath(npath):
+                if npath not in base and exists(npath):
+                    errors.append(f'File exists: {RLB}{npath}{RRB}')
+                else:
+                    change_list.append(('rename', opath, npath))
+
+        for npiti, npath in new.content:
+            if npiti is None:
+                change_list.append(('track', npath))
 
     if errors:
         for e in errors:
@@ -533,25 +564,12 @@ def step_calculate_inventory_diff(base, new):
 
         user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'])
         if user_confirm == 'edit':
-            print()
             return (step_vim_edit_inventory, base, new)
 
         if user_confirm == 'redo':
-            print()
             return (step_vim_edit_inventory, base, base)
 
         return (exit, 1)
-
-    change_list = []
-
-    for opiti, opath in base.content:
-        npath = new.get_path_by_piti(opiti)
-        if not npath:
-            if new.get_path_by_piti('#' + opiti) is None:
-                change_list.append(('remove', opath))
-
-        elif realpath(opath) != realpath(npath):
-            change_list.append(('rename', opath, npath))
 
     return (step_print_change_list, base, new, change_list)
 
@@ -561,7 +579,7 @@ def step_print_change_list(base, new, change_list):
         info('No change')
         return (exit, 0)
 
-    if not change_list:
+    if not ({c[0] for c in change_list} & {'remove', 'rename'}):
         newnew = Inventory()
         for piti, path in new:
             if piti is None or not piti.startswith('#'):
@@ -576,13 +594,18 @@ def step_print_change_list(base, new, change_list):
 
     for change in change_list:
         if change[0] == 'remove':
-            p = change[1]
-            print_path_with_prompt(info, red, 'Remove:', p)
+            print_path_with_prompt(info, red, 'Remove:', change[1])
 
         elif change[0] == 'rename':
             A, B = pretty_diff_strings(change[1], change[2])
             print_path_with_prompt(info, yellow, 'Rename:', A)
             print_path_with_prompt(info, yellow, '======>', B)
+
+        elif change[0] == 'untrack':
+            print_path_with_prompt(info, cyan, 'Untrack:', change[1])
+
+        elif change[0] == 'track':
+            print_path_with_prompt(info, cyan, 'Track:', change[1])
 
         else:
             info(change)
