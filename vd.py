@@ -128,22 +128,24 @@ def str_width(s):
 class UserSelection:
     def __init__(self, options):
         self.options = dict()
-        self.options[''] = options[0]
         for o in options:
             self.options[o[0]] = o
-            self.options[o[0].upper()] = o
             self.options[o] = o
-            self.options[o.upper()] = o
+            self.options[o.lower()] = o
 
         self.selected = None
 
     def select(self, o):
+        o = o.lower()
+
         if o not in self.options:
             raise ValueError('Invalid option: ' + o)
 
         self.selected = self.options[o]
 
     def __eq__(self, other):
+        other = other.lower()
+
         if other not in self.options:
             raise ValueError('Invalid option: ' + other)
 
@@ -153,7 +155,7 @@ class UserSelection:
         return self.selected
 
 
-def prompt_confirm(prompt_text, options):
+def prompt_confirm(prompt_text, options, allow_empty_input=True):
     options = [o.lower() for o in options]
 
     us = UserSelection(options)
@@ -166,7 +168,8 @@ def prompt_confirm(prompt_text, options):
     sys.stderr = open('/dev/tty', 'w')
 
     try:
-        options[0] = options[0][0].upper() + options[0][1:]
+        if allow_empty_input:
+            options[0] = options[0][0].upper() + options[0][1:]
 
         while True:
             print(prompt_text + ' '
@@ -175,7 +178,11 @@ def prompt_confirm(prompt_text, options):
                     + ']', end=' ')
 
             try:
-                us.select(input().strip())
+                i = input().strip()
+                if (not i) and allow_empty_input:
+                    i = options[0]
+
+                us.select(i)
             except ValueError as e:
                 continue
 
@@ -186,8 +193,9 @@ def prompt_confirm(prompt_text, options):
         exit(1)
 
     except EOFError:
-        print()
-        us.select('')
+        print(black('^D'))
+        if allow_empty_input:
+            us.select(options[0])
 
     print()
 
@@ -488,7 +496,7 @@ def step_vim_edit_inventory(base, inventory):
         for e in errors:
             error(e)
 
-        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'])
+        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'], allow_empty_input=False)
         if user_confirm == 'edit':
             return (step_vim_edit_inventory, base, lines)
 
@@ -562,7 +570,7 @@ def step_calculate_inventory_diff(base, new):
         for e in errors:
             error(e)
 
-        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'])
+        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'], allow_empty_input=False)
         if user_confirm == 'edit':
             return (step_vim_edit_inventory, base, new)
 
