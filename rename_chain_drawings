@@ -1,0 +1,34 @@
+Rename:┌─[./A]◄┐
+Rename:└►[./B]─┘
+
+Rename:┌─[./A]
+Rename:└►[./B]─┐
+Rename:  [./C]◄┘
+
+Rename:┌─[./A]
+Rename:└►[./B]─┐
+Rename:┌─[./C]◄┘
+Rename:└►[./D]
+
+Rename:┌─[./A]◄──┐
+Rename:└►[./B]─┐ │
+Rename:  [./C]◄┘─┘
+
+Rename:┌─[./A]◄──┐
+Rename:└►[./B]─┐ │
+Rename:┌─[./C]◄┘ │
+Rename:└►[./D]───┘
+
+─►
+◄─
+
+Rename:┌─[./A]
+Rename:└►[./B]↴  ↰
+Rename:  [./long file name]
+Rename:  [./D]◄─┘
+
+↰
+↱
+↴
+↵
+
