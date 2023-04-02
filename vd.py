@@ -2,6 +2,7 @@
 
 # Mandatory
 #TODO: Generate OP list
+#TODO: Prefer hardlink over symlink when path duplicated?
 #TODO: Review symlink handling, should I treat a symlink to dir as file or dir?
 #TODO: Refine parse error message, because vim's content disappears after exit
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
@@ -214,18 +215,30 @@ def prompt_confirm(prompt_text, options, allow_empty_input=True):
 # Containers
 # =============================================================================
 
+class InvalidPitiError(Exception):
+    pass
+
+class DuplicatedPitiError(Exception):
+    pass
+
 class EmptyPathError(Exception):
+    pass
+
+class DuplicatedPathError(Exception):
+    pass
+
+class UnknownPathError(Exception):
     pass
 
 
 class TrackingEntry:
-    def __init__(self, piti, path, linenum=None):
+    def __init__(self, piti, path):
         # PITI = Path Item Temporary Identifier
         # A temporary unique number that associated to a path for path operation
 
         self.piti = piti
         self.path = path
-        self.linenum = linenum
+        self.errors = set()
 
     def __eq__(self, other):
         return (self.piti, self.path) == (other.piti, other.path)
@@ -267,21 +280,18 @@ class Inventory:
 
         return self.content == other.content
 
-    def append_entry(self, piti, path, linenum=None):
-        if not path:
-            raise EmptyPathError()
-
+    def append_entry(self, piti, path):
         npath = normalize_path(path)
 
         if piti and piti not in self.piti_index:
             self.piti_index[piti] = npath
 
-        if realpath(npath) not in self.real_path_set:
+        if npath and realpath(npath) not in self.real_path_set:
             self.real_path_set.add(realpath(npath))
         elif self.ignore_duplicated_path:
             return
 
-        self.content.append(TrackingEntry(piti, npath, linenum=linenum))
+        self.content.append(TrackingEntry(piti, npath))
 
     def _append_path(self, path):
         if basename(path).startswith('.') and self.ignore_hidden:
@@ -323,6 +333,11 @@ class Inventory:
 
     def get_path_by_piti(self, piti):
         return self.piti_index.get(piti)
+
+    def get_entry_by_piti(self, piti):
+        for entry in self:
+            if entry.piti == piti:
+                return entry
 
 
 # =============================================================================
@@ -434,7 +449,7 @@ def pretty_diff_strings(a, b):
 #
 # Some step functions have to relay arguments for the next step function,
 # although they are not going to use it at all.
-# =============================================================================
+# -----------------------------------------------------------------------------
 
 def step_vim_edit_inventory(base, inventory):
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
@@ -465,7 +480,7 @@ def step_vim_edit_inventory(base, inventory):
         lines = []
         errors = []
         with open(tf.name, mode='r', encoding='utf8') as f:
-            for linenum, line in enumerate(f, start=1):
+            for line in f:
                 line = line.rstrip('\n')
                 lines.append(line)
 
@@ -474,23 +489,15 @@ def step_vim_edit_inventory(base, inventory):
 
                 rec = RegexCache(line)
 
-                if rec.match(r'^(#?\d+)\t(.*)$'):
+                if rec.match(r'^(#? *\d+)\t(.*)$'):
                     piti, path = rec.group(1), rec.group(2)
-
-                    try:
-                        new_inventory.append_entry(piti, path, linenum=linenum)
-                    except EmptyPathError:
-                        errors.append(f'Line {linenum}: file path cannot be empty')
-
-                elif exists(line):
-                    new_inventory.append_entry(None, line, linenum=linenum)
+                    new_inventory.append_entry(piti, path)
 
                 elif line.startswith('#'):
                     continue
 
                 else:
-                    t = 'dir' if line.endswith('/') else 'file'
-                    errors.append(f'Line {linenum}: {t} does not exist: {RLB}{line}{RRB}')
+                    new_inventory.append_entry(None, line)
 
     if errors:
         for e in errors:
@@ -517,59 +524,103 @@ def step_calculate_inventory_diff(base, new):
         debug((npiti, npath))
     debug(magenta('==== inventory (new) ===='))
 
-    piti_set = set()
-    path_set = set()
-    errors = []
-    # Sanity check of new inventory content
-    for npiti, npath in new.content:
-        if (npiti is not None) and (npiti.startswith('#')):
+    # =========================================================================
+    # Calculate inventory diff
+    # -------------------------------------------------------------------------
+    # 1. Construct bucket (indexed by pitp)
+    # 1.1 Put base inventory into bucket
+    # 1.2 Put new inventory info bucket, do sanity check at the same time
+    # 2. Construct change list from bucket
+    # -------------------------------------------------------------------------
+
+    # 1.1 Put base inventory into bucket
+    bucket = {'new':[]}
+    for opiti, opath in base:
+        bucket[opiti] = opath
+
+    # 1.2 Put new inventory info bucket, do sanity check at the same time
+    npiti_list = [npiti for npiti,npath in new]
+    dup_piti_set = set(
+            npiti for npiti in npiti_list
+            if npiti is not None and npiti_list.count(npiti) > 1)
+
+    npath_list = [realpath(npath) for npiti,npath in new]
+    dup_path_set = set(
+            npath for npath in npath_list
+            if npath_list.count(npath) > 1)
+
+    for entry in new:
+        npiti, npath = entry
+
+        if not npath:
+            entry.errors.add(EmptyPathError)
+
+        if realpath(npath) in dup_path_set:
+            entry.errors.add(DuplicatedPathError)
+
+        if npiti is None:
+            if not exists(npath):
+                entry.errors.add(FileNotFoundError)
+            else:
+                bucket['new'].append(npath)
             continue
 
-        # Check duplicated piti
-        if (npiti is not None) and (npiti in piti_set):
-            errors.append(f'Duplicated key: {npiti}')
+        if npiti is not None:
+            untrack = npiti.startswith('#')
+            npiti = npiti.lstrip('#')
+
+        if npiti in dup_piti_set:
+            entry.errors.add(DuplicatedPitiError)
+
+        if exists(npath) and npath not in base:
+            entry.errors.add(FileExistsError)
+
+        if npiti not in bucket.keys():
+            entry.errors.add(InvalidPitiError)
+
+        if entry.errors:
+            continue
+
+        opath = bucket[npiti]
+
+        if untrack:
+            bucket[npiti] = (opath, None)
         else:
-            piti_set.add(npiti)
+            bucket[npiti] = (opath, npath)
 
-        # Check duplicated path
-        if realpath(npath) in path_set:
-            errors.append(f'Duplicated path: {RLB}{npath}{RRB}')
-            if realpath(npath) != abspath(npath):
-                nrrp = normalize_path(relpath(realpath(npath)))
-                errors.append(f'Real path =====> {RLB}{nrrp}{RRB}')
-        else:
-            path_set.add(realpath(npath))
+    has_error = False
+    if set(e for entry in new for e in entry.errors) & {InvalidPitiError, DuplicatedPitiError}:
+        piti_error_left_padding = '   '
+    else:
+        piti_error_left_padding = ''
 
-        # Check inexisting piti
-        if npiti is not None and base.get_path_by_piti(npiti) is None:
-            errors.append(f'Invalid key: {npiti}')
-
-    change_list = []
-
-    if not errors:
-        # Calculate change list
-        for opiti, opath in base:
-            npath = new.get_path_by_piti(opiti)
-            if not npath:
-                if new.get_path_by_piti('#' + opiti) is not None:
-                    change_list.append(('untrack', opath))
-                elif opath not in new:
-                    change_list.append(('remove', opath))
-
-            elif realpath(opath) != realpath(npath):
-                if npath not in base and exists(npath):
-                    errors.append(f'File exists: {RLB}{npath}{RRB}')
+    for entry in new:
+        if entry.errors:
+            line = ''
+            if entry.piti is not None:
+                if entry.errors & {InvalidPitiError, DuplicatedPitiError}:
+                    line += red('─►') + ' ' + red_bg(entry.piti)
                 else:
-                    change_list.append(('rename', opath, npath))
+                    line += piti_error_left_padding + entry.piti
 
-        for npiti, npath in new.content:
-            if npiti is None:
-                change_list.append(('track', npath))
+                line += '  '
 
-    if errors:
-        for e in errors:
-            error(e)
+            if DuplicatedPathError in entry.errors:
+                line += red_bg(entry.path) + red(' ◄─ Duplicated path')
+            elif FileNotFoundError in entry.errors:
+                line += red_bg(entry.path) + red(' ◄─ Unknown path')
+            elif FileExistsError in entry.errors:
+                line += yellow_bg(entry.path) + yellow(' ◄─ {} already exists'.format(
+                    'Dir' if isdir(entry.path) else 'File'))
+            elif EmptyPathError in entry.errors:
+                line += red('() ◄─ Empty path')
+            else:
+                line += entry.path
 
+            error(line)
+            has_error = True
+
+    if has_error:
         user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'], allow_empty_input=False)
         if user_confirm == 'edit':
             return (step_vim_edit_inventory, base, new)
@@ -578,6 +629,26 @@ def step_calculate_inventory_diff(base, new):
             return (step_vim_edit_inventory, base, base)
 
         return (exit, 1)
+
+    # 2. Construct change list from bucket
+    change_list = []
+    for piti in bucket:
+        if piti == 'new':
+            for path in bucket['new']:
+                change_list.append(('track', path))
+
+        elif isinstance(bucket[piti], str):
+            change_list.append(('remove', bucket[piti]))
+
+        elif isinstance(bucket[piti], tuple):
+            opath = bucket[piti][0]
+            npath = bucket[piti][1]
+
+            if bucket[piti][1] is None:
+                change_list.append(('untrack', opath))
+
+            elif realpath(opath) != realpath(npath):
+                change_list.append(('rename', opath, npath))
 
     return (step_print_change_list, base, new, change_list)
 
@@ -600,20 +671,27 @@ def step_print_change_list(base, new, change_list):
 
         return (step_vim_edit_inventory, newnew, newnew)
 
-    for change in change_list:
-        if change[0] == 'remove':
+    ordering = {
+            'untrack': 0,
+            'track': 1,
+            'remove': 2,
+            'rename': 3,
+            }
+
+    for change in sorted(change_list, key=lambda x: ordering[x[0]]):
+        if change[0] == 'untrack':
+            print_path_with_prompt(info, cyan, 'Untrack:', change[1])
+
+        elif change[0] == 'track':
+            print_path_with_prompt(info, cyan, 'Track:', change[1])
+
+        elif change[0] == 'remove':
             print_path_with_prompt(info, red, 'Remove:', change[1])
 
         elif change[0] == 'rename':
             A, B = pretty_diff_strings(change[1], change[2])
             print_path_with_prompt(info, yellow, 'Rename:', A)
             print_path_with_prompt(info, yellow, '======>', B)
-
-        elif change[0] == 'untrack':
-            print_path_with_prompt(info, cyan, 'Untrack:', change[1])
-
-        elif change[0] == 'track':
-            print_path_with_prompt(info, cyan, 'Track:', change[1])
 
         else:
             info(change)
@@ -701,10 +779,11 @@ def main():
 
     # =========================================================================
     # Collect initial targets
-    # =========================================================================
+    # -------------------------------------------------------------------------
     # Targets from commnad line arguments are expanded
     # Targets from stdin are not expanded
     # If none provided, '.' is expanded
+    # -------------------------------------------------------------------------
 
     targets = []
 
@@ -723,7 +802,8 @@ def main():
     inventory.ignore_duplicated_path = True
 
     for t, e in targets:
-        inventory.append(t, expand=e)
+        if t:
+            inventory.append(t, expand=e)
 
     has_error = False
     for _, path in inventory.content:
@@ -742,7 +822,7 @@ def main():
 
     # =========================================================================
     # Main loop
-    # =========================================================================
+    # -------------------------------------------------------------------------
     # 1. Construct the stage: inventory => (seq num, tab, ./file/path/)
     # 2. Invoke vim with current stage content
     # 3. Parse and get new stage content
@@ -753,6 +833,7 @@ def main():
     # 5.r. if user say "r" (redo), invoke vim with old stage content
     # 5.y. if user say "y" (yes) or enter, apply the OP list
     # 5.*. keep asking until recognized option is selected or Ctrl-C is pressed
+    # -------------------------------------------------------------------------
 
     def name(a):
         try:
