@@ -17,7 +17,7 @@
 
 # Enhancement
 #TODO: If user change dir to .tar (by removing the trailing slash), tar it
-#TODO: Add -e/-E: always expand/not expand path for the first parsing
+#TODO: Add -e/-E: always/not expand path for the first parsing
 #TODO: Provide directives for adding new entries like {file} {dir}
 
 __version__ = '0.0.0'
@@ -527,7 +527,7 @@ def step_calculate_inventory_diff(base, new):
     # =========================================================================
     # Calculate inventory diff
     # -------------------------------------------------------------------------
-    # 1. Construct bucket (indexed by pitp)
+    # 1. Construct bucket (indexed by piti)
     # 1.1 Put base inventory into bucket
     # 1.2 Put new inventory info bucket, do sanity check at the same time
     # 2. Construct change list from bucket
@@ -539,6 +539,8 @@ def step_calculate_inventory_diff(base, new):
         bucket[opiti] = opath
 
     # 1.2 Put new inventory info bucket, do sanity check at the same time
+
+    # Collect duplicated pitis and paths beforehand
     npiti_list = [npiti for npiti,npath in new]
     dup_piti_set = set(
             npiti for npiti in npiti_list
@@ -552,12 +554,15 @@ def step_calculate_inventory_diff(base, new):
     for entry in new:
         npiti, npath = entry
 
+        # not allow empty path
         if not npath:
             entry.errors.add(EmptyPathError)
 
+        # not allow duplicated path
         if realpath(npath) in dup_path_set:
             entry.errors.add(DuplicatedPathError)
 
+        # handle newly-tracked path
         if npiti is None:
             if not exists(npath):
                 entry.errors.add(FileNotFoundError)
@@ -569,12 +574,15 @@ def step_calculate_inventory_diff(base, new):
             untrack = npiti.startswith('#')
             npiti = npiti.lstrip('#')
 
+        # not allow duplicated piti
         if npiti in dup_piti_set:
             entry.errors.add(DuplicatedPitiError)
 
+        # not allow writing to existing path
         if exists(npath) and npath not in base:
             entry.errors.add(FileExistsError)
 
+        # not allow invalid piti
         if npiti not in bucket.keys():
             entry.errors.add(InvalidPitiError)
 
@@ -631,45 +639,43 @@ def step_calculate_inventory_diff(base, new):
         return (exit, 1)
 
     # 2. Construct change list from bucket
-    change_list = []
+    # ('track', path)
+    # ('untrack', path)
+    # ('remove', path)
+    # ('rename', src, dst)
+    raw_change_list = []
     for piti in bucket:
         if piti == 'new':
             for path in bucket['new']:
-                change_list.append(('track', path))
+                if path not in base:
+                    raw_change_list.append(('track', path))
 
-        elif isinstance(bucket[piti], str):
-            change_list.append(('remove', bucket[piti]))
+        elif isinstance(bucket[piti], str) and bucket[piti] not in bucket['new']:
+            raw_change_list.append(('remove', bucket[piti]))
 
         elif isinstance(bucket[piti], tuple):
             opath = bucket[piti][0]
             npath = bucket[piti][1]
 
             if bucket[piti][1] is None:
-                change_list.append(('untrack', opath))
+                raw_change_list.append(('untrack', opath))
 
             elif realpath(opath) != realpath(npath):
-                change_list.append(('rename', opath, npath))
+                raw_change_list.append(('rename', opath, npath))
 
-    return (step_print_change_list, base, new, change_list)
+    return (step_print_change_list, base, new, raw_change_list)
 
 
-def step_print_change_list(base, new, change_list):
+def step_print_change_list(base, new, raw_change_list):
+    # If base inventory and new inventory is exactly the same, exit
     if base == new:
         info('No change')
         return (exit, 0)
 
-    if not ({c[0] for c in change_list} & {'remove', 'rename'}):
-        newnew = Inventory()
-        for piti, path in new:
-            if piti is None or not piti.startswith('#'):
-                newnew.append(path)
-        newnew.build_index()
-
-        if not newnew:
-            print('No targets to edit')
-            return (exit, 0)
-
-        return (step_vim_edit_inventory, newnew, newnew)
+    #TODO: specialized high level change type:
+    # 'domino': sequential renaming
+    # 'rotate': 'domino', plus the final path is renamed to the first path
+    # 'swap': 'rotate' of two paths
 
     ordering = {
             'untrack': 0,
@@ -678,7 +684,7 @@ def step_print_change_list(base, new, change_list):
             'rename': 3,
             }
 
-    for change in sorted(change_list, key=lambda x: ordering[x[0]]):
+    for change in sorted(raw_change_list, key=lambda x: ordering[x[0]]):
         if change[0] == 'untrack':
             print_path_with_prompt(info, cyan, 'Untrack:', change[1])
 
@@ -696,9 +702,23 @@ def step_print_change_list(base, new, change_list):
         else:
             info(change)
 
+    # If all changes are 'track' and 'untrack', apply the change directly
+    if all({c[0] in ('track', 'untrack') for c in raw_change_list}):
+        newnew = Inventory()
+        for piti, path in new:
+            if piti is None or not piti.startswith('#'):
+                newnew.append(path)
+        newnew.build_index()
+
+        if not newnew:
+            print('No targets to edit')
+            return (exit, 0)
+
+        return (step_vim_edit_inventory, newnew, newnew)
+
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
     if user_confirm == 'yes':
-        return (step_calculate_op_list, base, new, change_list)
+        return (step_calculate_op_list, base, new, raw_change_list)
 
     if user_confirm == 'edit':
         return (step_vim_edit_inventory, base, new)
@@ -713,15 +733,15 @@ def step_print_change_list(base, new, change_list):
     return (exit, 1)
 
 
-def step_calculate_op_list(base, new, change_list):
-    for change in change_list:
+def step_calculate_op_list(base, new, raw_change_list):
+    for change in raw_change_list:
         if change[0] == 'remove':
-            # dir: shutil.rmtree()
+            # dir: shutil.rmtree(path)
             # file: os.remove()
             print_path_with_prompt(info, red, '(dry)Removing:', change[1])
 
         elif change[0] == 'rename':
-            # shutil.move()
+            # shutil.move(src, dst) (calls os.rename(src, dst) on same fs)
             print_path_with_prompt(info, yellow, '(dry)Renaming:', change[1])
             print_path_with_prompt(info, yellow, '(dry)========>', change[2])
 
