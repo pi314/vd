@@ -440,6 +440,74 @@ def pretty_diff_strings(a, b):
     return (A, B)
 
 
+def aggregate_changes(change_list_raw):
+    # Collect and aggregate raw 'rename' operations into the following
+    # high level change types:
+    # - 'domino': sequential renaming
+    # - 'rotate': 'domino', plus the final path is renamed to the first path
+    #
+    # Original 'rename' is a special case of 'domino' where N=2
+
+    change_list_untrack = []
+    change_list_track = []
+    change_list_remove = []
+    change_list_rename = []
+
+    rename_chains = set()
+
+    for change in change_list_raw:
+        if change[0] == 'untrack':
+            change_list_untrack.append(change)
+
+        elif change[0] == 'track':
+            change_list_track.append(change)
+
+        elif change[0] == 'remove':
+            change_list_remove.append(change)
+
+        else:
+            src = change[1]
+            dst = change[2]
+            rename_chains.add((src, dst))
+
+    while rename_chains:
+        this_chain = rename_chains.pop()
+
+        add = None
+        remove = None
+        for other_chain in rename_chains:
+            if realpath(this_chain[-1]) == realpath(other_chain[0]):
+                remove = other_chain
+                add = this_chain + other_chain[1:]
+                break
+
+            elif realpath(other_chain[-1]) == realpath(this_chain[0]):
+                remove = other_chain
+                add = other_chain + this_chain[1:]
+                break
+
+        if remove:
+            rename_chains.remove(remove)
+
+        if add:
+            rename_chains.add(add)
+
+        if add is None:
+            if this_chain[0] == this_chain[-1]:
+                rotate_chain = this_chain[:-1]
+                pivot = rotate_chain.index(min(rotate_chain))
+                rotate_chain = rotate_chain[pivot:] + rotate_chain[:pivot]
+                change_list_rename.append(('rotate', *rotate_chain))
+
+            else:
+                change_list_rename.append(('domino', *this_chain))
+
+    return (change_list_untrack +
+            change_list_track +
+            change_list_remove +
+            sorted(change_list_rename, key=lambda x: x[1]))
+
+
 # =============================================================================
 # "Step" functions
 # -----------------------------------------------------------------------------
@@ -643,48 +711,38 @@ def step_calculate_inventory_diff(base, new):
     # ('untrack', path)
     # ('remove', path)
     # ('rename', src, dst)
-    raw_change_list = []
+    change_list_raw = []
     for piti in bucket:
         if piti == 'new':
             for path in bucket['new']:
                 if path not in base:
-                    raw_change_list.append(('track', path))
+                    change_list_raw.append(('track', path))
 
         elif isinstance(bucket[piti], str) and bucket[piti] not in bucket['new']:
-            raw_change_list.append(('remove', bucket[piti]))
+            change_list_raw.append(('remove', bucket[piti]))
 
         elif isinstance(bucket[piti], tuple):
             opath = bucket[piti][0]
             npath = bucket[piti][1]
 
             if bucket[piti][1] is None:
-                raw_change_list.append(('untrack', opath))
+                change_list_raw.append(('untrack', opath))
 
             elif realpath(opath) != realpath(npath):
-                raw_change_list.append(('rename', opath, npath))
+                change_list_raw.append(('rename', opath, npath))
 
-    return (step_print_change_list, base, new, raw_change_list)
+    return (step_print_change_list, base, new, change_list_raw)
 
 
-def step_print_change_list(base, new, raw_change_list):
+def step_print_change_list(base, new, change_list_raw):
     # If base inventory and new inventory is exactly the same, exit
     if base == new:
         info('No change')
         return (exit, 0)
 
-    #TODO: specialized high level change type:
-    # 'domino': sequential renaming
-    # 'rotate': 'domino', plus the final path is renamed to the first path
-    # 'swap': 'rotate' of two paths
+    change_list = aggregate_changes(change_list_raw)
 
-    ordering = {
-            'untrack': 0,
-            'track': 1,
-            'remove': 2,
-            'rename': 3,
-            }
-
-    for change in sorted(raw_change_list, key=lambda x: ordering[x[0]]):
+    for change in change_list:
         if change[0] == 'untrack':
             print_path_with_prompt(info, cyan, 'Untrack:', change[1])
 
@@ -694,16 +752,39 @@ def step_print_change_list(base, new, raw_change_list):
         elif change[0] == 'remove':
             print_path_with_prompt(info, red, 'Remove:', change[1])
 
-        elif change[0] == 'rename':
-            A, B = pretty_diff_strings(change[1], change[2])
-            print_path_with_prompt(info, yellow, 'Rename:', A)
-            print_path_with_prompt(info, yellow, '======>', B)
+        elif change[0] == 'domino':
+            if len(change) == 3:
+                A, B = pretty_diff_strings(change[1], change[2])
+                print_path_with_prompt(info, yellow, 'Rename:', A)
+                print_path_with_prompt(info, yellow, '└─────►', B)
+
+            else:
+                for idx, path in enumerate(change[1:]):
+                    print_path_with_prompt(info, yellow,
+                            'Rename:' + ('┌─' if idx == 0 else '└►'),
+                            path)
+
+        elif change[0] == 'rotate':
+            if len(change) == 3:
+                print_path_with_prompt(info, yellow, 'Swap:┌►', change[1])
+                print_path_with_prompt(info, yellow, 'Swap:└►', change[2])
+            else:
+                rotate_chain_len = len(change[1:])
+                for idx, path in enumerate(change[1:]):
+                    if idx == 0:
+                        arrow = '┌►┌─'
+                    elif idx == rotate_chain_len - 1:
+                        arrow = '└───'
+                    else:
+                        arrow = '│ └►'
+
+                    print_path_with_prompt(info, yellow, 'Rotate:' + arrow, path)
 
         else:
             info(change)
 
     # If all changes are 'track' and 'untrack', apply the change directly
-    if all({c[0] in ('track', 'untrack') for c in raw_change_list}):
+    if all({c[0] in ('track', 'untrack') for c in change_list}):
         newnew = Inventory()
         for piti, path in new:
             if piti is None or not piti.startswith('#'):
@@ -718,7 +799,7 @@ def step_print_change_list(base, new, raw_change_list):
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
     if user_confirm == 'yes':
-        return (step_calculate_op_list, base, new, raw_change_list)
+        return (step_calculate_op_list, base, new, change_list)
 
     if user_confirm == 'edit':
         return (step_vim_edit_inventory, base, new)
@@ -733,8 +814,8 @@ def step_print_change_list(base, new, raw_change_list):
     return (exit, 1)
 
 
-def step_calculate_op_list(base, new, raw_change_list):
-    for change in raw_change_list:
+def step_calculate_op_list(base, new, change_list_raw):
+    for change in change_list_raw:
         if change[0] == 'remove':
             # dir: shutil.rmtree(path)
             # file: os.remove()

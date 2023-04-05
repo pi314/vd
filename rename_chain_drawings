@@ -42,6 +42,14 @@ Rename:  [./D]◄─┘
 ⬐ U+2B10
 ⬑ U+2B11
 
+Rename:┌─[LICENSE]
+Rename:└►[README.rst]
+Rename:└►[__pycache__]
+Rename:└►[rename_chain_drawings]
+Rename:└►[setup.py]
+Rename:└►[vd.egg-info]
+Rename:└►[vd.py]
+
 Rotate:┌►┌─[LICENSE]
 Rotate:│ └►[README.rst]
 Rotate:│ └►[__pycache__]
