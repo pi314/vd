@@ -29,6 +29,7 @@ __version__ = '0.0.0'
 
 import argparse
 import collections
+import datetime
 import difflib
 import functools
 import itertools
@@ -36,6 +37,7 @@ import math
 import os
 import re
 import readline
+import shlex
 import shutil
 import subprocess as sub
 import sys
@@ -44,7 +46,7 @@ import types
 
 from enum import Enum
 from math import ceil, log10
-from os.path import basename, join, exists, isdir, isfile, split, realpath, abspath, relpath
+from os.path import basename, join, exists, isdir, isfile, split, realpath, abspath
 from unicodedata import east_asian_width
 
 
@@ -116,6 +118,10 @@ def debug(*args, **kwargs):
 
 def info(*args, **kwargs):
     print(cyan('[Info]'), *args, **kwargs)
+
+
+def warning(*args, **kwargs):
+    print_stderr(yellow('[Warning]'), *args, **kwargs)
 
 
 def error(*args, **kwargs):
@@ -205,6 +211,17 @@ def prompt_confirm(prompt_text, options, allow_empty_input=True):
     sys.stderr = stderr_backup
 
     return us
+
+
+def gen_tmp_file_name(path, postfix='.vdtmp.'):
+    now = datetime.datetime.now()
+    tmp_file_name = '{orig_path}{postfix}{timestamp}[{getpid}]'.format(
+            orig_path=path.lstrip('/'),
+            postfix=postfix,
+            timestamp=now.strftime('%Y-%m-%d.%H:%M:%S.%f'),
+            getpid=os.getpid(),
+            )
+    return tmp_file_name
 
 # -----------------------------------------------------------------------------
 # Generalized Utilities
@@ -314,11 +331,8 @@ class Inventory:
             if not ls and keep_empty_dir:
                 self._append_path(path)
 
-        elif isfile(path):
-            self._append_path(path)
-
         else:
-            raise Exception('Unknown file type')
+            self._append_path(path)
 
     def build_index(self):
         if not self.content:
@@ -342,7 +356,7 @@ class Inventory:
 
 # =============================================================================
 # Specialized Utilities
-# =============================================================================
+# -----------------------------------------------------------------------------
 
 def normalize_path(path):
     if not path:
@@ -506,6 +520,10 @@ def aggregate_changes(change_list_raw):
             change_list_track +
             change_list_remove +
             sorted(change_list_rename, key=lambda x: x[1]))
+
+# -----------------------------------------------------------------------------
+# Specialized Utilities
+# =============================================================================
 
 
 # =============================================================================
@@ -731,10 +749,10 @@ def step_calculate_inventory_diff(base, new):
             elif realpath(opath) != realpath(npath):
                 change_list_raw.append(('rename', opath, npath))
 
-    return (step_print_change_list, base, new, change_list_raw)
+    return (step_confirm_change_list, base, new, change_list_raw)
 
 
-def step_print_change_list(base, new, change_list_raw):
+def step_confirm_change_list(base, new, change_list_raw):
     # If base inventory and new inventory is exactly the same, exit
     if base == new:
         info('No change')
@@ -792,14 +810,14 @@ def step_print_change_list(base, new, change_list_raw):
         newnew.build_index()
 
         if not newnew:
-            print('No targets to edit')
+            info('No targets to edit')
             return (exit, 0)
 
         return (step_vim_edit_inventory, newnew, newnew)
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
     if user_confirm == 'yes':
-        return (step_calculate_op_list, base, new, change_list)
+        return (step_apply_change_list, base, new, change_list)
 
     if user_confirm == 'edit':
         return (step_vim_edit_inventory, base, new)
@@ -810,26 +828,51 @@ def step_print_change_list(base, new, change_list_raw):
     elif user_confirm == 'quit':
         return (exit, 1)
 
-    error('Unexpected flow, exit')
+    error('Unexpected scenario, abort')
     return (exit, 1)
 
 
-def step_calculate_op_list(base, new, change_list_raw):
-    for change in change_list_raw:
+def step_apply_change_list(base, new, change_list):
+    cmd_list = []
+    for change in change_list:
         if change[0] == 'remove':
-            # dir: shutil.rmtree(path)
-            # file: os.remove()
-            print_path_with_prompt(info, red, '(dry)Removing:', change[1])
+            cmd_list.append(('rm', change[1]))
 
-        elif change[0] == 'rename':
-            # shutil.move(src, dst) (calls os.rename(src, dst) on same fs)
-            print_path_with_prompt(info, yellow, '(dry)Renaming:', change[1])
-            print_path_with_prompt(info, yellow, '(dry)========>', change[2])
+        elif change[0] == 'domino':
+            for src, dst in list(zip(change[1:], change[2:]))[::-1]:
+                cmd_list.append(('mv', src, dst))
+
+        elif change[0] == 'rotate':
+            tmpdst = gen_tmp_file_name(change[-1])
+
+            cmd_list.append(('mv', change[-1], tmpdst))
+            for src, dst in list(zip(change[1:], change[2:]))[::-1]:
+                cmd_list.append(('mv', src, dst))
+
+            cmd_list.append(('mv', tmpdst, change[1]))
 
         else:
-            debug('(dry)', change)
+            warning(f'Unknown change: {change}')
 
-    info('WIP, exit')
+    for cmd in cmd_list:
+        if cmd[0] == 'rm':
+            if isdir(cmd[1]):
+                shutil.rmtree(cmd[1])
+                print(red('$'), 'rm', '-r', magenta(shlex.quote(cmd[1])))
+            else:
+                os.remove(cmd[1])
+                print(red('$'), 'rm', magenta(shlex.quote(cmd[1])))
+
+        elif cmd[0] == 'mv':
+            shutil.move(src, dst)
+            print(yellow('$'), 'mv',
+                    magenta(shlex.quote(cmd[1])),
+                    magenta(shlex.quote(cmd[2])))
+
+        else:
+            warning(f'Unknown cmd: {cmd}')
+
+    return (step_vim_edit_inventory, new, new)
 
 
 # =============================================================================
