@@ -45,7 +45,7 @@ import types
 
 from enum import Enum
 from math import ceil, log10
-from os.path import basename, join, exists, isdir, isfile, split, realpath, abspath
+from os.path import dirname, basename, join, exists, isdir, islink, realpath
 from unicodedata import east_asian_width
 
 
@@ -853,23 +853,55 @@ def step_apply_change_list(base, new, change_list):
         else:
             warning(f'Unknown change: {change}')
 
+    def parent_dir(path):
+        return dirname(path.rstrip('/'))
+
+    def clean_up_empty_dir(path):
+        path = path.rstrip('/')
+        while path and path != '.':
+            dot_ds_store = join(path, '.DS_Store')
+            if exists(dot_ds_store):
+                print(red('$'), 'rm', magenta(dot_ds_store))
+                os.remove(join(dot_ds_store))
+
+            try:
+                print(red('$'), 'rmdir', magenta(path))
+                os.rmdir(path)
+            except FileNotFoundError:
+                return
+            except OSError:
+                return
+
+            path = parent_dir(path)
+
+    rmdirset = set()
+
     for cmd in cmd_list:
         if cmd[0] == 'rm':
-            if isdir(cmd[1]):
-                shutil.rmtree(cmd[1])
-                print(red('$'), 'rm', '-r', magenta(shlex.quote(cmd[1])))
-            else:
-                os.remove(cmd[1])
+            if not isdir(cmd[1]) or islink(cmd[1]):
                 print(red('$'), 'rm', magenta(shlex.quote(cmd[1])))
+                os.remove(cmd[1])
+                rmdirset.add(parent_dir(cmd[1]))
+            else:
+                print(red('$'), 'rm', '-r', magenta(shlex.quote(cmd[1])))
+                shutil.rmtree(cmd[1])
+                rmdirset.add(parent_dir(cmd[1]))
 
         elif cmd[0] == 'mv':
-            shutil.move(src, dst)
+            if not exists(parent_dir(dst)):
+                print(yellow('$'), 'mkdir', '-p', magenta(parent_dir(dst)))
+                os.makedirs(parent_dir(dst), exist_ok=True)
             print(yellow('$'), 'mv',
                     magenta(shlex.quote(cmd[1])),
                     magenta(shlex.quote(cmd[2])))
+            shutil.move(src, dst)
+            rmdirset.add(parent_dir(src))
 
         else:
             warning(f'Unknown cmd: {cmd}')
+
+    for d in rmdirset:
+        clean_up_empty_dir(parent_dir(src))
 
     return (step_vim_edit_inventory, new, new)
 
