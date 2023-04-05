@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: Generate OP list
 #TODO: Prefer hardlink over symlink when path duplicated?
 #TODO: Review symlink handling, should I treat a symlink to dir as file or dir?
 #TODO: Refine parse error message, because vim's content disappears after exit
