@@ -913,7 +913,10 @@ def step_apply_change_list(base, new, change_list):
             else:
                 shutil.move(cmd[1], cmd[2])
 
-            rmdirset.add(parent_dir(cmd[1]))
+            p1 = parent_dir(cmd[1])
+            p2 = parent_dir(cmd[2])
+            if p1 != p2:
+                rmdirset.add(p1)
 
         else:
             warning(f'Unknown cmd: {cmd}')
