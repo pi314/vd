@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: Prefer hardlink over symlink when path duplicated?
-#TODO: Review symlink handling, should I treat a symlink to dir as file or dir?
-#TODO: Refine parse error message, because vim's content disappears after exit
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
+#TODO: Expand symlink, command not decided yet
 #TODO: -r/--recursive, with depth limit?
 #TODO: Refine error() API, centralize common handling
 
@@ -15,9 +13,10 @@
 #TODO: Respect LS_COLORS by utilizing bits in PITI
 
 # Enhancement
-#TODO: If user change dir to .tar (by removing the trailing slash), tar it
+#TODO: If user change dir trailing slash to .tar, tar it
 #TODO: Add -e/-E: always/not expand path for the first parsing
 #TODO: Provide directives for adding new entries like {file} {dir}
+#====> let user use :r !find themself?
 
 __version__ = '0.0.0'
 
@@ -45,7 +44,7 @@ import types
 
 from enum import Enum
 from math import ceil, log10
-from os.path import dirname, basename, join, exists, isdir, islink, realpath
+from os.path import dirname, basename, join, exists, isdir, islink, abspath, realpath
 from unicodedata import east_asian_width
 
 
@@ -129,6 +128,10 @@ def error(*args, **kwargs):
 
 def str_width(s):
     return sum(1 + (east_asian_width(c) in 'WF') for c in decolor(s))
+
+
+def xxxxpath(path):
+    return abspath(path) if islink(path) else realpath(path)
 
 
 class UserSelection:
@@ -297,13 +300,18 @@ class Inventory:
         return self.content == other.content
 
     def append_entry(self, piti, path):
+        if not path:
+            return
+
         npath = normalize_path(path)
 
         if piti and piti not in self.piti_index:
             self.piti_index[piti] = npath
 
-        if npath and realpath(npath) not in self.real_path_set:
-            self.real_path_set.add(realpath(npath))
+        rpath = xxxxpath(path)
+
+        if rpath not in self.real_path_set:
+            self.real_path_set.add(rpath)
         elif self.ignore_duplicated_path:
             return
 
@@ -322,7 +330,7 @@ class Inventory:
         elif not exists(path):
             self._append_path(path)
 
-        elif isdir(path):
+        elif isdir(path) and not islink(path):
             ls = sorted(os.listdir(path))
             for i in ls:
                 self._append_path(join(path, i))
@@ -365,9 +373,9 @@ def normalize_path(path):
     if not path.startswith(('/', './', '../')) and path not in ('.', '..'):
         npath = './'
 
-    npath += path
+    npath += path.rstrip('/')
 
-    if not path.endswith('/') and isdir(npath):
+    if isdir(path) and not islink(path):
         npath += '/'
 
     return npath
@@ -631,20 +639,23 @@ def step_calculate_inventory_diff(base, new):
             npiti for npiti in npiti_list
             if npiti is not None and npiti_list.count(npiti) > 1)
 
-    npath_list = [realpath(npath) for npiti,npath in new]
+    npath_list = [
+            xxxxpath(npath)
+            for npiti,npath in new]
     dup_path_set = set(
             npath for npath in npath_list
             if npath_list.count(npath) > 1)
 
     for entry in new:
         npiti, npath = entry
+        nrpath = xxxxpath(npath)
 
         # not allow empty path
         if not npath:
             entry.errors.add(EmptyPathError)
 
         # not allow duplicated path
-        if realpath(npath) in dup_path_set:
+        if nrpath in dup_path_set:
             entry.errors.add(DuplicatedPathError)
 
         # handle newly-tracked path
@@ -703,8 +714,7 @@ def step_calculate_inventory_diff(base, new):
             elif FileNotFoundError in entry.errors:
                 line += red_bg(entry.path) + red(' ◄─ Unknown path')
             elif FileExistsError in entry.errors:
-                line += yellow_bg(entry.path) + yellow(' ◄─ {} already exists'.format(
-                    'Dir' if isdir(entry.path) else 'File'))
+                line += yellow_bg(entry.path) + yellow(' ◄─ Already exists')
             elif EmptyPathError in entry.errors:
                 line += red('() ◄─ Empty path')
             else:
@@ -888,20 +898,28 @@ def step_apply_change_list(base, new, change_list):
                 rmdirset.add(parent_dir(cmd[1]))
 
         elif cmd[0] == 'mv':
-            if not exists(parent_dir(dst)):
-                print(yellow('$'), 'mkdir', '-p', magenta(parent_dir(dst)))
-                os.makedirs(parent_dir(dst), exist_ok=True)
+            if not exists(parent_dir(cmd[2])):
+                print(yellow('$'), 'mkdir', '-p', magenta(parent_dir(cmd[2])))
+                os.makedirs(parent_dir(cmd[2]), exist_ok=True)
             print(yellow('$'), 'mv',
                     magenta(shlex.quote(cmd[1])),
                     magenta(shlex.quote(cmd[2])))
-            shutil.move(src, dst)
-            rmdirset.add(parent_dir(src))
+
+            if islink(cmd[1]):
+                linkto = os.readlink(cmd[1])
+                os.symlink(linkto, cmd[2])
+                os.remove(cmd[1])
+
+            else:
+                shutil.move(cmd[1], cmd[2])
+
+            rmdirset.add(parent_dir(cmd[1]))
 
         else:
             warning(f'Unknown cmd: {cmd}')
 
     for d in rmdirset:
-        clean_up_empty_dir(parent_dir(src))
+        clean_up_empty_dir(d)
 
     return (step_vim_edit_inventory, new, new)
 
@@ -982,7 +1000,7 @@ def main():
 
     has_error = False
     for _, path in inventory.content:
-        if not exists(path):
+        if not islink(path) and not exists(path):
             print_path_with_prompt(error, red, 'File does not exist:', path)
             has_error = True
 
