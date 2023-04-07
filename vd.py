@@ -286,7 +286,7 @@ class Inventory:
         self.ignore_hidden = False
         self.ignore_duplicated_path = False
         self.content = []
-        self.inode_set = set()
+        self.xxxxpath_set = set()
         self.piti_index = dict()
 
     def __len__(self):
@@ -299,7 +299,7 @@ class Inventory:
         return self.content[index]
 
     def __contains__(self, path):
-        return inode(path) in self.inode_set
+        return xxxxpath(path) in self.xxxxpath_set
 
     def __eq__(self, other):
         if not isinstance(other, Inventory):
@@ -316,10 +316,10 @@ class Inventory:
         if piti and piti not in self.piti_index:
             self.piti_index[piti] = npath
 
-        ind = inode(path)
+        rpath = xxxxpath(path)
 
-        if ind not in self.inode_set:
-            self.inode_set.add(ind)
+        if rpath not in self.xxxxpath_set:
+            self.xxxxpath_set.add(rpath)
         elif self.ignore_duplicated_path:
             return
 
@@ -685,8 +685,10 @@ def step_calculate_inventory_diff(base, new):
         if npiti in dup_piti_set:
             entry.errors.add(DuplicatedPitiError)
 
+        opath = bucket[npiti]
+
         # not allow writing to existing path
-        if exists(npath) and npath not in base:
+        if exists(npath) and npath not in base and inode(npath) != inode(opath):
             entry.errors.add(FileExistsError)
 
         # not allow invalid piti
@@ -695,8 +697,6 @@ def step_calculate_inventory_diff(base, new):
 
         if entry.errors:
             continue
-
-        opath = bucket[npiti]
 
         if untrack:
             bucket[npiti] = (opath, None)
