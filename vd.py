@@ -138,7 +138,8 @@ def xxxxpath(path):
 
 
 def inode(path):
-    return os.stat(path).st_ino
+    if exists(path):
+        return os.stat(path).st_ino
 
 
 class UserSelection:
