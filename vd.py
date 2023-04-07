@@ -2,7 +2,7 @@
 
 # Mandatory
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
-#TODO: Expand symlink, command not decided yet
+#TODO: Expand symlink with '@'
 #TODO: -r/--recursive, with depth limit?
 #TODO: Refine error() API, centralize common handling
 
@@ -924,7 +924,10 @@ def step_apply_change_list(base, new, change_list):
     for d in rmdirset:
         clean_up_empty_dir(d)
 
-    return (step_vim_edit_inventory, new, new)
+    if any({c[0] in ('track', 'untrack') for c in change_list}):
+        return (step_vim_edit_inventory, new, new)
+
+    return (exit, 0)
 
 
 # =============================================================================
