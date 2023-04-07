@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 # Mandatory
+#TODO: meta_change_list
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: Expand symlink with '@'
+#TODO: Cancel out untrack + track
 #TODO: shrinkuser()
 #TODO: -r/--recursive, with depth limit?
 #TODO: Refine error() API, centralize common handling
@@ -133,6 +135,10 @@ def str_width(s):
 
 def xxxxpath(path):
     return abspath(path) if islink(path) else realpath(path)
+
+
+def inode(path):
+    return os.stat(path).st_ino
 
 
 class UserSelection:
@@ -279,7 +285,7 @@ class Inventory:
         self.ignore_hidden = False
         self.ignore_duplicated_path = False
         self.content = []
-        self.real_path_set = set()
+        self.inode_set = set()
         self.piti_index = dict()
 
     def __len__(self):
@@ -292,7 +298,7 @@ class Inventory:
         return self.content[index]
 
     def __contains__(self, path):
-        return realpath(path) in self.real_path_set
+        return inode(path) in self.inode_set
 
     def __eq__(self, other):
         if not isinstance(other, Inventory):
@@ -311,8 +317,10 @@ class Inventory:
 
         rpath = xxxxpath(path)
 
-        if rpath not in self.real_path_set:
-            self.real_path_set.add(rpath)
+        ind = inode(rpath)
+
+        if ind not in self.inode_set:
+            self.inode_set.add(ind)
         elif self.ignore_duplicated_path:
             return
 
