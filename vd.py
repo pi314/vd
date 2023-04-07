@@ -3,6 +3,7 @@
 # Mandatory
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: Expand symlink with '@'
+#TODO: shrinkuser()
 #TODO: -r/--recursive, with depth limit?
 #TODO: Refine error() API, centralize common handling
 
@@ -232,7 +233,7 @@ def gen_tmp_file_name(path, postfix='.vdtmp.'):
 
 # =============================================================================
 # Containers
-# =============================================================================
+# -----------------------------------------------------------------------------
 
 class InvalidPitiError(Exception):
     pass
@@ -360,6 +361,9 @@ class Inventory:
             if entry.piti == piti:
                 return entry
 
+# -----------------------------------------------------------------------------
+# Containers
+# =============================================================================
 
 # =============================================================================
 # Specialized Utilities
@@ -875,8 +879,9 @@ def step_apply_change_list(base, new, change_list):
                 os.remove(join(dot_ds_store))
 
             try:
-                print(red('$'), 'rmdir', magenta(path))
-                os.rmdir(path)
+                if not os.listdir(path):
+                    print(red('$'), 'rmdir', magenta(path))
+                    os.rmdir(path)
             except FileNotFoundError:
                 return
             except OSError:
