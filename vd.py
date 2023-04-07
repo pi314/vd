@@ -139,7 +139,7 @@ def xxxxpath(path):
 
 def inode(path):
     if exists(path):
-        return os.stat(path).st_ino
+        return os.stat(path, follow_symlinks=False).st_ino
 
 
 class UserSelection:
@@ -316,9 +316,7 @@ class Inventory:
         if piti and piti not in self.piti_index:
             self.piti_index[piti] = npath
 
-        rpath = xxxxpath(path)
-
-        ind = inode(rpath)
+        ind = inode(path)
 
         if ind not in self.inode_set:
             self.inode_set.add(ind)
