@@ -47,7 +47,7 @@ import types
 
 from enum import Enum
 from math import ceil, log10
-from os.path import dirname, basename, join, exists, isdir, islink, abspath, realpath
+from os.path import split, dirname, basename, join, exists, isdir, islink, abspath, realpath
 from unicodedata import east_asian_width
 
 
@@ -134,7 +134,15 @@ def str_width(s):
 
 
 def xxxxpath(path):
-    return abspath(path) if islink(path) else realpath(path)
+    # It's basically realpath() except it treats the trailing symlink as file
+
+    path = path.rstrip('/')
+
+    if islink(path):
+        head, tail = split(path)
+        return join(realpath(head), tail)
+
+    return realpath(path)
 
 
 def inode(path):
@@ -580,7 +588,7 @@ def step_vim_edit_inventory(base, inventory):
             )
 
         # Parse tempfile content
-        new_inventory = Inventory()
+        new = Inventory()
         lines = []
         errors = []
         with open(tf.name, mode='r', encoding='utf8') as f:
@@ -595,13 +603,13 @@ def step_vim_edit_inventory(base, inventory):
 
                 if rec.match(r'^(#? *\d+)\t(.*)$'):
                     piti, path = rec.group(1), rec.group(2)
-                    new_inventory.append_entry(piti, path)
+                    new.append_entry(piti, path)
 
                 elif line.startswith('#'):
                     continue
 
                 else:
-                    new_inventory.append_entry(None, line)
+                    new.append_entry(None, line)
 
     if errors:
         for e in errors:
@@ -616,7 +624,7 @@ def step_vim_edit_inventory(base, inventory):
 
         return (exit, 1)
 
-    return (step_calculate_inventory_diff, base, new_inventory)
+    return (step_calculate_inventory_diff, base, new)
 
 
 def step_calculate_inventory_diff(base, new):
