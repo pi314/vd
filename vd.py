@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 # Mandatory
+#TODO: Refine simple diff
 #TODO: meta_change_list
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: Expand symlink with '@'
 #TODO: Cancel out untrack + track
-#TODO: shrinkuser()
+#TODO: auto shrinkuser() and expanduser()
 #TODO: -r/--recursive, with depth limit?
 #TODO: Refine error() API, centralize common handling
 
@@ -136,8 +137,11 @@ def str_width(s):
 def xxxxpath(path):
     # It's basically realpath() except it treats the trailing symlink as file
 
-    path = path.rstrip('/')
+    # Empty path is specially treated, for avoiding realpath('') -> cwd
+    if not path:
+        return
 
+    path = path.rstrip('/')
     if islink(path):
         head, tail = split(path)
         return join(realpath(head), tail)
@@ -148,6 +152,10 @@ def xxxxpath(path):
 def inode(path):
     if exists(path):
         return os.stat(path, follow_symlinks=False).st_ino
+
+
+def splitpath(path):
+    return path.split('/')
 
 
 class UserSelection:
@@ -250,7 +258,7 @@ def gen_tmp_file_name(path, postfix='.vdtmp.'):
 # Containers
 # -----------------------------------------------------------------------------
 
-class InvalidPitiError(Exception):
+class PitiError(Exception):
     pass
 
 class DuplicatedPitiError(Exception):
@@ -259,18 +267,22 @@ class DuplicatedPitiError(Exception):
 class EmptyPathError(Exception):
     pass
 
-class DuplicatedPathError(Exception):
+class ConflictedPathError(Exception):
     pass
 
 class UnknownPathError(Exception):
     pass
 
+class WTF(Exception):
+    pass
 
-class TrackingEntry:
-    def __init__(self, piti, path):
+
+class InventoryEntry:
+    def __init__(self, is_untrack, piti, path):
         # PITI = Path Item Temporary Identifier
         # A temporary unique number that associated to a path for path operation
 
+        self.is_untrack = is_untrack
         self.piti = piti
         self.path = path
         self.errors = set()
@@ -287,6 +299,8 @@ class TrackingEntry:
     def __repr__(self):
         return repr((self.piti, self.path))
 
+    def __hash__(self):
+        return id(self)
 
 
 class Inventory:
@@ -315,7 +329,7 @@ class Inventory:
 
         return self.content == other.content
 
-    def append_entry(self, piti, path):
+    def append_entry(self, is_untrack, piti, path):
         if not path:
             return
 
@@ -331,13 +345,13 @@ class Inventory:
         elif self.ignore_duplicated_path:
             return
 
-        self.content.append(TrackingEntry(piti, npath))
+        self.content.append(InventoryEntry(is_untrack, piti, npath))
 
     def _append_path(self, path):
         if basename(path).startswith('.') and self.ignore_hidden:
             return
 
-        self.append_entry(None, path)
+        self.append_entry(False, None, path)
 
     def append(self, path, expand=False, keep_empty_dir=False):
         if not expand:
@@ -371,10 +385,52 @@ class Inventory:
     def get_path_by_piti(self, piti):
         return self.piti_index.get(piti)
 
-    def get_entry_by_piti(self, piti):
-        for entry in self:
-            if entry.piti == piti:
-                return entry
+
+class ReferencedPathTree:
+    def __init__(self, node_name):
+        self.name = node_name
+        self.children = {}
+        self.entries = set()
+
+    def _add(self, node_list, entry):
+        self.entries.add(entry)
+
+        if not node_list:
+            return
+
+        if node_list[0] not in self.children:
+            self.children[node_list[0]] = ReferencedPathTree(node_list[0])
+
+        self.children[node_list[0]]._add(node_list[1:], entry)
+
+    def add(self, path, entry):
+        if not path:
+            return
+
+        self._add(splitpath(xxxxpath(path).lstrip('/')), entry)
+
+    def _get(self, node_list):
+        if not node_list:
+            return self
+
+        if node_list[0] not in self.children:
+            return
+
+        return self.children[node_list[0]]._get(node_list[1:])
+
+    def get(self, path):
+        node_list = splitpath(xxxxpath(path).lstrip('/'))
+        return self._get(node_list)
+
+    def to_str(self):
+        ret = self.name + ' (' + ','.join((str(i.piti) for i in self.entries)) + ')' + '\n'
+        for child in sorted(self.children):
+            for line in self.children[child].to_str().rstrip('\n').split('\n'):
+                ret += '| ' + line + '\n'
+        return ret.rstrip('\n')
+
+    def print(self):
+        print(self.to_str())
 
 # -----------------------------------------------------------------------------
 # Containers
@@ -601,15 +657,15 @@ def step_vim_edit_inventory(base, inventory):
 
                 rec = RegexCache(line)
 
-                if rec.match(r'^(#? *\d+)\t(.*)$'):
-                    piti, path = rec.group(1), rec.group(2)
-                    new.append_entry(piti, path)
+                if rec.match(r'^(#?) *(\d+)\t(.*)$'):
+                    is_untrack, piti, path = rec.group(1), rec.group(2), rec.group(3)
+                    new.append_entry(is_untrack, piti, path)
 
                 elif line.startswith('#'):
                     continue
 
                 else:
-                    new.append_entry(None, line)
+                    new.append_entry(False, None, line)
 
     if errors:
         for e in errors:
@@ -639,97 +695,105 @@ def step_calculate_inventory_diff(base, new):
     # =========================================================================
     # Calculate inventory diff
     # -------------------------------------------------------------------------
-    # 1. Construct bucket (indexed by piti)
-    # 1.1 Put base inventory into bucket
-    # 1.2 Put new inventory info bucket, do sanity check at the same time
-    # 2. Construct change list from bucket
+    # 1. Construct meta data for checking piti and path duplications
+    # 2. Construct bucket (indexed by piti)
+    # 2.1 Put base inventory into bucket
+    # 2.2 Put new inventory info bucket, do sanity check on the fly
+    # 3. Construct change list from bucket
     # -------------------------------------------------------------------------
 
-    # 1.1 Put base inventory into bucket
-    bucket = {'new':[]}
-    for opiti, opath in base:
-        bucket[opiti] = opath
-
-    # 1.2 Put new inventory info bucket, do sanity check at the same time
-
-    # Collect duplicated pitis and paths beforehand
-    npiti_list = [npiti for npiti,npath in new]
-    dup_piti_set = set(
-            npiti for npiti in npiti_list
-            if npiti is not None and npiti_list.count(npiti) > 1)
-
-    npath_list = [
-            xxxxpath(npath)
-            for npiti,npath in new]
-    dup_path_set = set(
-            npath for npath in npath_list
-            if npath_list.count(npath) > 1)
+    # 1. Construct meta data for checking piti and path duplications
+    tree = ReferencedPathTree('(root)')
+    piti_count = {}
 
     for entry in new:
         npiti, npath = entry
-        nrpath = xxxxpath(npath)
 
-        # not allow empty path
+        if npiti is not None:
+            piti_count[npiti] = piti_count.get(npiti, 0) + 1
+
+        if not entry.is_untrack:
+            tree.add(npath, entry)
+
+    # 2. Construct bucket (indexed by piti)
+    bucket = {'new':[]}
+
+    # 2.1 Put base inventory into bucket
+    for opiti, opath in base:
+        bucket[opiti] = opath
+
+    # 2.2 Put new inventory info bucket, do sanity check on the fly
+    for entry in new:
+        npiti, npath = entry
+
+        # Not allow empty path
         if not npath:
             entry.errors.add(EmptyPathError)
 
-        # not allow duplicated path
-        if nrpath in dup_path_set:
-            entry.errors.add(DuplicatedPathError)
+        # Not allow invalid piti
+        if npiti not in bucket:
+            entry.errors.add(PitiError)
 
-        # handle newly-tracked path
-        if npiti is None:
-            if not exists(npath):
-                entry.errors.add(FileNotFoundError)
-            else:
-                bucket['new'].append(npath)
-            continue
-
-        if npiti is not None:
-            untrack = npiti.startswith('#')
-            npiti = npiti.lstrip('#')
-
-        # not allow duplicated piti
-        if npiti in dup_piti_set:
-            entry.errors.add(DuplicatedPitiError)
-
-        opath = bucket[npiti]
-
-        # not allow writing to existing path
-        if exists(npath) and npath not in base and inode(npath) != inode(opath):
-            entry.errors.add(FileExistsError)
-
-        # not allow invalid piti
-        if npiti not in bucket.keys():
-            entry.errors.add(InvalidPitiError)
-
+        # Above errors are trivial enough to skip all remaining checks
         if entry.errors:
             continue
 
-        if untrack:
-            bucket[npiti] = (opath, None)
+        if not entry.is_untrack:
+            # Not allow duplicated path
+            tree_node = tree.get(npath)
+            if tree_node.entries != {entry}:
+                for e in tree_node.entries:
+                    e.errors.add(ConflictedPathError)
+
+        # Handle newly-tracked path
+        if npiti is None:
+            if exists(npath):
+                bucket['new'].append(npath)
+            else:
+                entry.errors.add(FileNotFoundError)
+
         else:
-            bucket[npiti] = (opath, npath)
+            # Not allow duplicated piti
+            if piti_count[npiti] > 1:
+                entry.errors.add(DuplicatedPitiError)
+
+            opath = bucket[npiti]
+
+            # Not allow writing to existing path
+            if exists(npath) and npath not in base and inode(npath) != inode(opath):
+                entry.errors.add(FileExistsError)
+
+            if entry.errors:
+                continue
+
+            if entry.is_untrack:
+                bucket[npiti] = (opath, None)
+            else:
+                bucket[npiti] = (opath, npath)
 
     has_error = False
-    if set(e for entry in new for e in entry.errors) & {InvalidPitiError, DuplicatedPitiError}:
-        piti_error_left_padding = '   '
+    if PitiError in set(e for entry in new for e in entry.errors):
+        piti_left_padding = '   '
     else:
-        piti_error_left_padding = ''
+        piti_left_padding = ''
 
     for entry in new:
         if entry.errors:
             line = ''
             if entry.piti is not None:
-                if entry.errors & {InvalidPitiError, DuplicatedPitiError}:
-                    line += red('─►') + ' ' + red_bg(entry.piti)
+                if PitiError in entry.errors:
+                    line += red('─►') + ' ' + red_bg(
+                            ('#' if entry.is_untrack else '') +
+                            entry.piti)
                 else:
-                    line += piti_error_left_padding + entry.piti
+                    line += (piti_left_padding +
+                            ('#' if entry.is_untrack else '') +
+                            entry.piti)
 
                 line += '  '
 
-            if DuplicatedPathError in entry.errors:
-                line += red_bg(entry.path) + red(' ◄─ Duplicated path')
+            if ConflictedPathError in entry.errors:
+                line += red_bg(entry.path) + red(' ◄─ Conflicted path')
             elif FileNotFoundError in entry.errors:
                 line += red_bg(entry.path) + red(' ◄─ Unknown path')
             elif FileExistsError in entry.errors:
@@ -743,7 +807,8 @@ def step_calculate_inventory_diff(base, new):
             has_error = True
 
     if has_error:
-        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'], allow_empty_input=False)
+        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
+                allow_empty_input=False)
         if user_confirm == 'edit':
             return (step_vim_edit_inventory, base, new)
 
@@ -752,7 +817,7 @@ def step_calculate_inventory_diff(base, new):
 
         return (exit, 1)
 
-    # 2. Construct change list from bucket
+    # 3. Construct change list from bucket
     # ('track', path)
     # ('untrack', path)
     # ('remove', path)
