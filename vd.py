@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # Mandatory
+#TODO: Centralize path sanity check, probably should not do it on bucket
 #TODO: Refine simple diff
 #TODO: meta_change_list
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
@@ -261,9 +262,6 @@ def gen_tmp_file_name(path, postfix='.vdtmp.'):
 class PitiError(Exception):
     pass
 
-class DuplicatedPitiError(Exception):
-    pass
-
 class EmptyPathError(Exception):
     pass
 
@@ -273,11 +271,8 @@ class ConflictedPathError(Exception):
 class UnknownPathError(Exception):
     pass
 
-class WTF(Exception):
-    pass
 
-
-class InventoryEntry:
+class InventoryItem:
     def __init__(self, is_untrack, piti, path):
         # PITI = Path Item Temporary Identifier
         # A temporary unique number that associated to a path for path operation
@@ -345,7 +340,7 @@ class Inventory:
         elif self.ignore_duplicated_path:
             return
 
-        self.content.append(InventoryEntry(is_untrack, piti, npath))
+        self.content.append(InventoryItem(is_untrack, piti, npath))
 
     def _append_path(self, path):
         if basename(path).startswith('.') and self.ignore_hidden:
@@ -658,8 +653,8 @@ def step_vim_edit_inventory(base, inventory):
                 rec = RegexCache(line)
 
                 if rec.match(r'^(#?) *(\d+)\t(.*)$'):
-                    is_untrack, piti, path = rec.group(1), rec.group(2), rec.group(3)
-                    new.append_entry(is_untrack, piti, path)
+                    untrack_mark, piti, path = rec.group(1), rec.group(2), rec.group(3)
+                    new.append_entry(untrack_mark == '#', piti, path)
 
                 elif line.startswith('#'):
                     continue
@@ -691,6 +686,100 @@ def step_calculate_inventory_diff(base, new):
     for npiti, npath in new.content:
         debug((npiti, npath))
     debug(magenta('==== inventory (new) ===='))
+
+    # =========================================================================
+    # Calculate inventory diff
+    # -------------------------------------------------------------------------
+    # 1. Construct "joined inventory" *backwards*
+    # 1.1 Create empty joined inventory
+    # 1.2 Put in new inventory items
+    # 1.3 Put in base inventory items
+    # 2. Do path checkes on joined inventory
+    # 3. Construct change list from joined inventory
+    # -------------------------------------------------------------------------
+
+    # These container classes are only used in this step function
+
+    class JoinedInventoryItem:
+        def __init__(self, piti, opath, npath):
+            self.piti = piti
+            self.opath = opath
+            self.npath = npath
+            self.errors = {}
+            self.is_untrack = False
+
+        def __hash__(self):
+            return id(self)
+
+    class JoinedInventory:
+        def __init__(self):
+            self.content = []
+            self.piti_index = {}
+            self.nxpath_index = {}
+
+        def append(self, nitem):
+            npiti = nitem.piti
+            npath = nitem.path
+
+            jitem = JoinedInventoryItem(npiti, None, npath)
+            jitem.is_untrack = nitem.is_untrack
+            self.content.append(jitem)
+
+            if npiti not in self.piti_index:
+                self.piti_index[npiti] = set()
+            self.piti_index[npiti].add(jitem)
+
+            xpath = xxxxpath(npath)
+            if xpath not in self.nxpath_index:
+                self.nxpath_index[xpath] = set()
+            self.nxpath_index[xpath].add(jitem)
+
+        def backward_attach(self, oitem):
+            opiti = oitem.piti
+            opath = oitem.path
+
+            if opiti in self.piti_index:
+                jitems = self.piti_index[opiti]
+
+                for jitem in jitems:
+                    jitem.opath = opath
+
+            else:
+                jitem = JoinedInventoryItem(opiti, opath, False)
+                self.content.append(jitem)
+                self.piti_index[opiti] = {jitem}
+
+        def __iter__(self):
+            for jitem in self.content:
+                yield jitem
+
+    # 1. Construct "joined inventory" *backwards*
+
+    # 1.1 Create empty joined inventory
+    joined_inventory = JoinedInventory()
+
+    # 1.2 Put in new inventory items
+    for entry in new:
+        joined_inventory.append(entry)
+
+    # 1.3 Put in base inventory items
+    for entry in base:
+        joined_inventory.backward_attach(entry)
+
+    for jitem in joined_inventory:
+        debug((
+            ('#' if jitem.is_untrack else ' '), jitem.piti,
+            jitem.opath, jitem.npath, jitem.errors))
+
+    # 2. Do path checkes on joined inventory
+    tree = ReferencedPathTree('(root)')
+    for jitem in joined_inventory:
+        ...
+
+    # 3. Construct change list from joined inventory
+
+    debug('WIP, exit')
+    exit(1)
 
     # =========================================================================
     # Calculate inventory diff
@@ -755,7 +844,7 @@ def step_calculate_inventory_diff(base, new):
         else:
             # Not allow duplicated piti
             if piti_count[npiti] > 1:
-                entry.errors.add(DuplicatedPitiError)
+                entry.errors.add(PitiError)
 
             opath = bucket[npiti]
 
@@ -768,6 +857,8 @@ def step_calculate_inventory_diff(base, new):
 
             if entry.is_untrack:
                 bucket[npiti] = (opath, None)
+            elif npath != opath and npath.startswith(opath):
+                entry.errors.add(ConflictedPathError)
             else:
                 bucket[npiti] = (opath, npath)
 
