@@ -404,7 +404,7 @@ class ReferencedPathTree:
         self.children[node_list[0]]._add(node_list[1:], entry)
 
     def add(self, path, entry):
-        if not path:
+        if not path or not isinstance(path, str):
             return
 
         self._add(splitpath(xxxxpath(path).lstrip('/')), entry)
@@ -419,18 +419,33 @@ class ReferencedPathTree:
         return self.children[node_list[0]]._get(node_list[1:])
 
     def get(self, path):
+        if not isinstance(path, str):
+            return
+
         node_list = splitpath(xxxxpath(path).lstrip('/'))
         return self._get(node_list)
 
-    def to_str(self):
-        ret = self.name + ' (' + ','.join((str(i.piti) for i in self.entries)) + ')' + '\n'
-        for child in sorted(self.children):
-            for line in self.children[child].to_str().rstrip('\n').split('\n'):
-                ret += '| ' + line + '\n'
-        return ret.rstrip('\n')
+    def to_lines(self):
+        ret = []
+        ret.append(self.name + ' (' + ','.join(
+                sorted(str(i.piti) for i in self.entries)) + ')')
+
+        children = sorted(self.children)
+        for idx, child in enumerate(children):
+            if idx == len(children) - 1:
+                prefix = ['└─ ', '   ']
+            else:
+                prefix = ['├─ ', '│  ']
+
+            lines = self.children[child].to_lines()
+            ret.append(prefix[0] + lines[0])
+            for line in lines[1:]:
+                ret.append(prefix[1] + line)
+
+        return ret
 
     def print(self):
-        print(self.to_str())
+        print('\n'.join(self.to_lines()))
 
 # -----------------------------------------------------------------------------
 # Containers
@@ -730,8 +745,8 @@ def step_calculate_inventory_diff(base, new):
         if not npath:
             entry.errors.add(EmptyPathError)
 
-        # Not allow invalid piti
-        if npiti not in bucket:
+        # Not allow invalid piti, of course piti=None skips this check
+        if npiti is not None and npiti not in bucket:
             entry.errors.add(PitiError)
 
         # Above errors are trivial enough to skip all remaining checks
@@ -801,7 +816,7 @@ def step_calculate_inventory_diff(base, new):
             elif EmptyPathError in entry.errors:
                 line += red('() ◄─ Empty path')
             else:
-                line += entry.path
+                line += entry.path + red(','.join(e.__name__ for e in entry.errors))
 
             error(line)
             has_error = True
