@@ -399,7 +399,7 @@ class ReferencedPathTree:
         self.children[node_list[0]]._add(node_list[1:], entry)
 
     def add(self, path, entry):
-        if not path:
+        if not path or not isinstance(path, str):
             return
 
         self._add(splitpath(xxxxpath(path).lstrip('/')), entry)
@@ -414,18 +414,33 @@ class ReferencedPathTree:
         return self.children[node_list[0]]._get(node_list[1:])
 
     def get(self, path):
+        if not isinstance(path, str):
+            return
+
         node_list = splitpath(xxxxpath(path).lstrip('/'))
         return self._get(node_list)
 
-    def to_str(self):
-        ret = self.name + ' (' + ','.join((str(i.piti) for i in self.entries)) + ')' + '\n'
-        for child in sorted(self.children):
-            for line in self.children[child].to_str().rstrip('\n').split('\n'):
-                ret += '| ' + line + '\n'
-        return ret.rstrip('\n')
+    def to_lines(self):
+        ret = []
+        ret.append(self.name + ' (' + ','.join(
+                sorted(str(i.piti) for i in self.entries)) + ')')
+
+        children = sorted(self.children)
+        for idx, child in enumerate(children):
+            if idx == len(children) - 1:
+                prefix = ['└─ ', '   ']
+            else:
+                prefix = ['├─ ', '│  ']
+
+            lines = self.children[child].to_lines()
+            ret.append(prefix[0] + lines[0])
+            for line in lines[1:]:
+                ret.append(prefix[1] + line)
+
+        return ret
 
     def print(self):
-        print(self.to_str())
+        print('\n'.join(self.to_lines()))
 
 # -----------------------------------------------------------------------------
 # Containers
@@ -726,28 +741,38 @@ def step_calculate_inventory_diff(base, new):
             self.content.append(jitem)
 
             if npiti not in self.piti_index:
-                self.piti_index[npiti] = set()
-            self.piti_index[npiti].add(jitem)
+                self.piti_index[npiti] = []
+            self.piti_index[npiti].append(jitem)
 
             xpath = xxxxpath(npath)
             if xpath not in self.nxpath_index:
-                self.nxpath_index[xpath] = set()
-            self.nxpath_index[xpath].add(jitem)
+                self.nxpath_index[xpath] = []
+            self.nxpath_index[xpath].append(jitem)
 
         def backward_attach(self, oitem):
             opiti = oitem.piti
             opath = oitem.path
 
+            debug(opiti, opath)
+
+            # opiti already present, attach opath to existing jitem
             if opiti in self.piti_index:
+                debug('piti present')
                 jitems = self.piti_index[opiti]
 
                 for jitem in jitems:
                     jitem.opath = opath
 
             else:
+                oxpath = xxxxpath(opath)
+                jitems = self.nxpath_index.get(oxpath, [])
+
+                if len(jitems) == 1:
+                    ...
+
                 jitem = JoinedInventoryItem(opiti, opath, False)
                 self.content.append(jitem)
-                self.piti_index[opiti] = {jitem}
+                self.piti_index[opiti] = [jitem]
 
         def __iter__(self):
             for jitem in self.content:
@@ -762,6 +787,12 @@ def step_calculate_inventory_diff(base, new):
     for entry in new:
         joined_inventory.append(entry)
 
+    for jitem in joined_inventory:
+        debug((
+            ('#' if jitem.is_untrack else ' '), jitem.piti,
+            jitem.opath, jitem.npath, jitem.errors))
+
+    debug('====')
     # 1.3 Put in base inventory items
     for entry in base:
         joined_inventory.backward_attach(entry)
@@ -774,7 +805,10 @@ def step_calculate_inventory_diff(base, new):
     # 2. Do path checkes on joined inventory
     tree = ReferencedPathTree('(root)')
     for jitem in joined_inventory:
-        ...
+        if not jitem.is_untrack and isinstance(jitem.npath, str):
+            tree.add(jitem.npath, jitem)
+
+    # tree.print()
 
     # 3. Construct change list from joined inventory
 
