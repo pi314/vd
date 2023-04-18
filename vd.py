@@ -695,11 +695,15 @@ def step_vim_edit_inventory(base, inventory):
 
 def step_calculate_inventory_diff(base, new):
     debug(magenta('==== inventory (base) ===='))
-    for opiti, opath in base.content:
-        debug((opiti, opath))
+    for oitem in base.content:
+        opiti = oitem.piti
+        opath = oitem.path
+        debug(('#' if oitem.is_untrack else ' ', opiti, opath))
     debug('-------------------------')
-    for npiti, npath in new.content:
-        debug((npiti, npath))
+    for nitem in new.content:
+        npiti = nitem.piti
+        npath = nitem.path
+        debug(('#' if nitem.is_untrack else ' ', npiti, npath))
     debug(magenta('==== inventory (new) ===='))
 
     # =========================================================================
@@ -732,47 +736,69 @@ def step_calculate_inventory_diff(base, new):
             self.piti_index = {}
             self.nxpath_index = {}
 
+        def filter(self, **kwargs):
+            ret = set(self.content)
+
+            if 'piti' in kwargs:
+                ret &= self.piti_index.get(kwargs['piti'], set())
+
+            if 'npath' in kwargs:
+                nxpath = xxxxpath(kwargs['npath'])
+                ret &= self.nxpath_index.get(nxpath, set())
+
+            return ret
+
+        def update_index(self, jitem):
+            piti = jitem.piti
+
+            if piti not in self.piti_index:
+                self.piti_index[piti] = set()
+            self.piti_index[piti].add(jitem)
+
+            xpath = xxxxpath(jitem.npath)
+            if xpath not in self.nxpath_index:
+                self.nxpath_index[xpath] = set()
+            self.nxpath_index[xpath].add(jitem)
+
         def append(self, nitem):
+            is_untrack = nitem.is_untrack
             npiti = nitem.piti
             npath = nitem.path
+
+            debug('append', nitem)
+            for jitem in self.filter(npath=npath)
 
             jitem = JoinedInventoryItem(npiti, None, npath)
             jitem.is_untrack = nitem.is_untrack
             self.content.append(jitem)
-
-            if npiti not in self.piti_index:
-                self.piti_index[npiti] = []
-            self.piti_index[npiti].append(jitem)
-
-            xpath = xxxxpath(npath)
-            if xpath not in self.nxpath_index:
-                self.nxpath_index[xpath] = []
-            self.nxpath_index[xpath].append(jitem)
+            self.update_index(jitem)
 
         def backward_attach(self, oitem):
             opiti = oitem.piti
             opath = oitem.path
 
-            debug(opiti, opath)
+            jitems = self.filter(piti=opiti)
 
             # opiti already present, attach opath to existing jitem
-            if opiti in self.piti_index:
-                debug('piti present')
-                jitems = self.piti_index[opiti]
-
+            if jitems:
                 for jitem in jitems:
                     jitem.opath = opath
 
+            # opiti not present, it's a 'remove'd item
             else:
-                oxpath = xxxxpath(opath)
-                jitems = self.nxpath_index.get(oxpath, [])
+                jitems = self.filter(piti=None, npath=opath)
 
-                if len(jitems) == 1:
-                    ...
+                # opath exists as a 'track' item, cancel out 'remove' + 'track'
+                if jitems:
+                    for jitem in jitems:
+                        jitem.piti = opiti
+                        jitem.opath = opath
 
-                jitem = JoinedInventoryItem(opiti, opath, False)
-                self.content.append(jitem)
-                self.piti_index[opiti] = [jitem]
+                # still not found, add it as 'remove' item
+                else:
+                    jitem = JoinedInventoryItem(opiti, opath, False)
+                    self.content.append(jitem)
+                    self.piti_index[opiti] = [jitem]
 
         def __iter__(self):
             for jitem in self.content:
