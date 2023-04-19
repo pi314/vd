@@ -766,7 +766,6 @@ def step_calculate_inventory_diff(base, new):
             npath = nitem.path
 
             debug('append', nitem)
-            for jitem in self.filter(npath=npath)
 
             jitem = JoinedInventoryItem(npiti, None, npath)
             jitem.is_untrack = nitem.is_untrack
