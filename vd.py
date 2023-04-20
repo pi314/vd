@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 # Mandatory
+#TODO: Move (almost) all checks to change_list
+#====> Use ReferencedPathTree to check conflicted operations
 #TODO: Refine simple diff
 #TODO: meta_change_list
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
@@ -74,6 +76,9 @@ class RegexCache:
 
     def group(self, *args, **kwargs):
         return self.m.group(*args, **kwargs)
+
+    def groups(self, *args, **kwargs):
+        return self.m.groups(*args, **kwargs)
 
 
 def color_to(color_code):
@@ -282,13 +287,13 @@ class InventoryEntry:
         # PITI = Path Item Temporary Identifier
         # A temporary unique number that associated to a path for path operation
 
-        self.is_untrack = is_untrack
+        self.is_untrack = bool(is_untrack)
         self.piti = piti
         self.path = path
         self.errors = set()
 
     def __eq__(self, other):
-        return (self.piti, self.path) == (other.piti, other.path)
+        return (self.is_untrack, self.piti, self.path) == (other.is_untrack, other.piti, other.path)
 
     def __iter__(self):
         return iter((self.piti, self.path))
@@ -301,6 +306,13 @@ class InventoryEntry:
 
     def __hash__(self):
         return id(self)
+
+    def __repr__(self):
+        return '<{}{} {}>'.format(
+                '#' if self.is_untrack else '',
+                self.piti,
+                self.path
+                )
 
 
 class Inventory:
@@ -384,6 +396,56 @@ class Inventory:
 
     def get_path_by_piti(self, piti):
         return self.piti_index.get(piti)
+
+
+class TrackOperation:
+    def __init__(self, target):
+        self.target = target
+        # self.item = item
+
+    def __repr__(self):
+        return '<Track {}>'.format(self.target)
+
+
+class UntrackOperation:
+    def __init__(self, target):
+        self.target = target
+
+    def __repr__(self):
+        return '<Untrack {}>'.format(self.target)
+
+
+class RemoveOperation:
+    def __init__(self, target):
+        self.target = target
+
+    def __repr__(self):
+        return '<Remove {}>'.format(self.target)
+
+
+class RenameOperation:
+    def __init__(self, src, dst):
+        self.src = src
+        self.dst = dst
+
+    def __repr__(self):
+        return '<Rename {}>'.format(', '.join((self.src, self.dst)))
+
+
+class DominoRenameOperation:
+    def __init__(self, targets):
+        self.targets = targets
+
+    def __repr__(self):
+        return '<Domino {}>'.format(', '.join(self.targets))
+
+
+class RotateRenameOperation:
+    def __init__(self, targets):
+        self.targets = targets
+
+    def __repr__(self):
+        return '<Rotate {}>'.format(', '.join(self.targets))
 
 
 class ReferencedPathTree:
@@ -567,19 +629,20 @@ def aggregate_changes(change_list_raw):
     rename_chains = set()
 
     for change in change_list_raw:
-        if change[0] == 'untrack':
+        if isinstance(change, UntrackOperation):
             change_list_untrack.append(change)
 
-        elif change[0] == 'track':
+        elif isinstance(change, TrackOperation):
             change_list_track.append(change)
 
-        elif change[0] == 'remove':
+        elif isinstance(change, RemoveOperation):
             change_list_remove.append(change)
 
+        elif isinstance(change, RenameOperation):
+            rename_chains.add((change.src, change.dst))
+
         else:
-            src = change[1]
-            dst = change[2]
-            rename_chains.add((src, dst))
+            error('Unknown change:', change)
 
     while rename_chains:
         this_chain = rename_chains.pop()
@@ -608,15 +671,15 @@ def aggregate_changes(change_list_raw):
                 rotate_chain = this_chain[:-1]
                 pivot = rotate_chain.index(min(rotate_chain))
                 rotate_chain = rotate_chain[pivot:] + rotate_chain[:pivot]
-                change_list_rename.append(('rotate', *rotate_chain))
+                change_list_rename.append(RotateRenameOperation(rotate_chain))
 
             else:
-                change_list_rename.append(('domino', *this_chain))
+                change_list_rename.append(DominoRenameOperation(this_chain))
 
     return (change_list_untrack +
             change_list_track +
             change_list_remove +
-            sorted(change_list_rename, key=lambda x: x[1]))
+            sorted(change_list_rename, key=lambda x: x.targets[0]))
 
 # -----------------------------------------------------------------------------
 # Specialized Utilities
@@ -635,6 +698,9 @@ def aggregate_changes(change_list_raw):
 # -----------------------------------------------------------------------------
 
 def step_vim_edit_inventory(base, inventory):
+    if exists('exit'):
+        return (exit, 1)
+
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
@@ -673,8 +739,8 @@ def step_vim_edit_inventory(base, inventory):
                 rec = RegexCache(line)
 
                 if rec.match(r'^(#?) *(\d+)\t(.*)$'):
-                    is_untrack, piti, path = rec.group(1), rec.group(2), rec.group(3)
-                    new.append_entry(is_untrack, piti, path)
+                    untrack_mark, piti, path = rec.groups()
+                    new.append_entry(untrack_mark == '#', piti, path)
 
                 elif line.startswith('#'):
                     continue
@@ -700,11 +766,11 @@ def step_vim_edit_inventory(base, inventory):
 
 def step_calculate_inventory_diff(base, new):
     debug(magenta('==== inventory (base) ===='))
-    for opiti, opath in base.content:
-        debug((opiti, opath))
+    for oitem in base.content:
+        debug(oitem)
     debug('-------------------------')
-    for npiti, npath in new.content:
-        debug((npiti, npath))
+    for nitem in new.content:
+        debug(nitem)
     debug(magenta('==== inventory (new) ===='))
 
     # =========================================================================
@@ -842,26 +908,27 @@ def step_calculate_inventory_diff(base, new):
         if piti == 'new':
             for path in bucket['new']:
                 if path not in base:
-                    change_list_raw.append(('track', path))
+                    change_list_raw.append(TrackOperation(path))
 
         elif isinstance(bucket[piti], str) and bucket[piti] not in bucket['new']:
-            change_list_raw.append(('remove', bucket[piti]))
+            change_list_raw.append(RemoveOperation(bucket[piti]))
 
         elif isinstance(bucket[piti], tuple):
             opath = bucket[piti][0]
             npath = bucket[piti][1]
 
             if bucket[piti][1] is None:
-                change_list_raw.append(('untrack', opath))
+                change_list_raw.append(UntrackOperation(opath))
 
             elif realpath(opath) != realpath(npath):
-                change_list_raw.append(('rename', opath, npath))
+                change_list_raw.append(RenameOperation(opath, npath))
 
     return (step_confirm_change_list, base, new, change_list_raw)
 
 
 def step_confirm_change_list(base, new, change_list_raw):
     # If base inventory and new inventory is exactly the same, exit
+    debug(base == new)
     if base == new:
         info('No change')
         return (exit, 0)
@@ -869,34 +936,34 @@ def step_confirm_change_list(base, new, change_list_raw):
     change_list = aggregate_changes(change_list_raw)
 
     for change in change_list:
-        if change[0] == 'untrack':
-            print_path_with_prompt(info, cyan, 'Untrack:', change[1])
+        if isinstance(change, UntrackOperation):
+            print_path_with_prompt(info, cyan, 'Untrack:', change.target)
 
-        elif change[0] == 'track':
-            print_path_with_prompt(info, cyan, 'Track:', change[1])
+        elif isinstance(change, TrackOperation):
+            print_path_with_prompt(info, cyan, 'Track:', change.target)
 
-        elif change[0] == 'remove':
-            print_path_with_prompt(info, red, 'Remove:', change[1])
+        elif isinstance(change, RemoveOperation):
+            print_path_with_prompt(info, red, 'Remove:', change.target)
 
-        elif change[0] == 'domino':
-            if len(change) == 3:
-                A, B = pretty_diff_strings(change[1], change[2])
+        elif isinstance(change, DominoRenameOperation):
+            if len(change.targets) == 2:
+                A, B = pretty_diff_strings(change.targets[0], change.targets[1])
                 print_path_with_prompt(info, yellow, 'Rename:', A)
                 print_path_with_prompt(info, yellow, '└─────►', B)
 
             else:
-                for idx, path in enumerate(change[1:]):
+                for idx, path in enumerate(change.targets):
                     print_path_with_prompt(info, yellow,
                             'Rename:' + ('┌─' if idx == 0 else '└►'),
                             path)
 
-        elif change[0] == 'rotate':
-            if len(change) == 3:
-                print_path_with_prompt(info, yellow, 'Swap:┌►', change[1])
-                print_path_with_prompt(info, yellow, 'Swap:└►', change[2])
+        elif isinstance(change, RotateRenameOperation):
+            if len(change.targets) == 2:
+                print_path_with_prompt(info, yellow, 'Swap:┌►', change.targets[0])
+                print_path_with_prompt(info, yellow, 'Swap:└►', change.targets[1])
             else:
-                rotate_chain_len = len(change[1:])
-                for idx, path in enumerate(change[1:]):
+                rotate_chain_len = len(change.targets)
+                for idx, path in enumerate(change.targets):
                     if idx == 0:
                         arrow = '┌►┌─'
                     elif idx == rotate_chain_len - 1:
@@ -907,14 +974,14 @@ def step_confirm_change_list(base, new, change_list_raw):
                     print_path_with_prompt(info, yellow, 'Rotate:' + arrow, path)
 
         else:
-            info(change)
+            warning(f'Unknown change: {change}')
 
     # If all changes are 'track' and 'untrack', apply the change directly
-    if all({c[0] in ('track', 'untrack') for c in change_list}):
+    if change_list and all({type(c) in (TrackOperation, UntrackOperation) for c in change_list}):
         newnew = Inventory()
-        for piti, path in new:
-            if piti is None or not piti.startswith('#'):
-                newnew.append(path)
+        for item in new:
+            if item.piti is None or not item.is_untrack:
+                newnew.append(item.path)
         newnew.build_index()
 
         if not newnew:
@@ -943,21 +1010,27 @@ def step_confirm_change_list(base, new, change_list_raw):
 def step_apply_change_list(base, new, change_list):
     cmd_list = []
     for change in change_list:
-        if change[0] == 'remove':
-            cmd_list.append(('rm', change[1]))
+        if isinstance(change, UntrackOperation):
+            print_path_with_prompt(info, cyan, 'Untrack:', change.target)
 
-        elif change[0] == 'domino':
-            for src, dst in list(zip(change[1:], change[2:]))[::-1]:
+        elif isinstance(change, TrackOperation):
+            print_path_with_prompt(info, cyan, 'Track:', change.target)
+
+        elif isinstance(change, RemoveOperation):
+            cmd_list.append(('rm', change.target))
+
+        elif isinstance(change, DominoRenameOperation):
+            for src, dst in list(zip(change.targets, change.targets[1:]))[::-1]:
                 cmd_list.append(('mv', src, dst))
 
-        elif change[0] == 'rotate':
-            tmpdst = gen_tmp_file_name(change[-1])
+        elif isinstance(change, RotateRenameOperation):
+            tmpdst = gen_tmp_file_name(change.targets[-1])
 
-            cmd_list.append(('mv', change[-1], tmpdst))
-            for src, dst in list(zip(change[1:], change[2:]))[::-1]:
+            cmd_list.append(('mv', change.targets[-1], tmpdst))
+            for src, dst in list(zip(change.targets, change.targets[1:]))[::-1]:
                 cmd_list.append(('mv', src, dst))
 
-            cmd_list.append(('mv', tmpdst, change[1]))
+            cmd_list.append(('mv', tmpdst, change.targets[0]))
 
         else:
             warning(f'Unknown change: {change}')
@@ -1024,7 +1097,7 @@ def step_apply_change_list(base, new, change_list):
     for d in rmdirset:
         clean_up_empty_dir(d)
 
-    if any({c[0] in ('track', 'untrack') for c in change_list}):
+    if any({type(c) in (TrackOperation, UntrackOperation) for c in change_list}):
         return (step_vim_edit_inventory, new, new)
 
     return (exit, 0)
