@@ -154,6 +154,10 @@ def xxxxpath(path):
     return realpath(path)
 
 
+def parent_dir(path):
+    return dirname(path.rstrip('/'))
+
+
 def inode(path):
     if exists(path):
         return os.stat(path, follow_symlinks=False).st_ino
@@ -1035,9 +1039,6 @@ def step_apply_change_list(base, new, change_list):
         else:
             warning(f'Unknown change: {change}')
 
-    def parent_dir(path):
-        return dirname(path.rstrip('/'))
-
     def clean_up_empty_dir(path):
         path = path.rstrip('/')
         while path and path != '.':
@@ -1104,6 +1105,10 @@ def step_apply_change_list(base, new, change_list):
         return (step_vim_edit_inventory, new, new)
 
     return (exit, 0)
+
+# -----------------------------------------------------------------------------
+# "Step" functions
+# =============================================================================
 
 
 # =============================================================================
