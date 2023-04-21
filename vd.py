@@ -1041,15 +1041,18 @@ def step_apply_change_list(base, new, change_list):
     def clean_up_empty_dir(path):
         path = path.rstrip('/')
         while path and path != '.':
-            dot_ds_store = join(path, '.DS_Store')
-            if exists(dot_ds_store):
-                print(red('$'), 'rm', magenta(dot_ds_store))
-                os.remove(join(dot_ds_store))
-
             try:
-                if not os.listdir(path):
-                    print(red('$'), 'rmdir', magenta(path))
-                    os.rmdir(path)
+                ls = os.listdir(path)
+                if ls and ls != ['.DS_Store']:
+                    return
+
+                dot_ds_store = join(path, '.DS_Store')
+                if exists(dot_ds_store):
+                    print(red('$'), 'rm', magenta(dot_ds_store))
+                    os.remove(join(dot_ds_store))
+
+                print(red('$'), 'rmdir', magenta(path))
+                os.rmdir(path)
             except FileNotFoundError:
                 return
             except OSError:
