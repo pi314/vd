@@ -13,7 +13,7 @@
 #TODO: Refine error() API, centralize common handling
 
 # Vim related
-#TODO: nnoremap J/K to move entry downward/upward
+#TODO: nnoremap J/K to move item downward/upward
 #TODO: vim default config
 #TODO: Print some hints on top
 #TODO: Respect LS_COLORS by utilizing bits in PITI
@@ -36,6 +36,7 @@ import collections
 import datetime
 import difflib
 import functools
+import io
 import itertools
 import math
 import os
@@ -119,20 +120,28 @@ def print_stderr(*args, **kwargs):
     print(*args, **kwargs)
 
 
+def print_msg(tag, print_func, *args, **kwargs):
+    with io.StringIO() as buffer:
+        print(*args, file=buffer, end='', **kwargs)
+
+        for line in buffer.getvalue().split('\n'):
+            print_func(tag, line.rstrip('\n'))
+
+
 def debug(*args, **kwargs):
-    print_stderr(magenta('[Debug]'), *args, **kwargs)
+    print_msg(magenta('[Debug]'), print_stderr, *args, **kwargs)
 
 
 def info(*args, **kwargs):
-    print(cyan('[Info]'), *args, **kwargs)
+    print_msg(cyan('[Info]'), print, *args, **kwargs)
 
 
 def warning(*args, **kwargs):
-    print_stderr(yellow('[Warning]'), *args, **kwargs)
+    print_msg(yellow('[Warning]'), print_stderr, *args, **kwargs)
 
 
 def error(*args, **kwargs):
-    print_stderr(red('[Error]'), *args)
+    print_msg(red('[Error]'), print_stderr, *args, **kwargs)
 
 
 def str_width(s):
@@ -273,9 +282,6 @@ class PitiError(Exception):
 class DuplicatedPitiError(Exception):
     pass
 
-class EmptyPathError(Exception):
-    pass
-
 class ConflictedPathError(Exception):
     pass
 
@@ -286,7 +292,7 @@ class WTF(Exception):
     pass
 
 
-class InventoryEntry:
+class InventoryItem:
     def __init__(self, is_untrack, piti, path):
         # PITI = Path Item Temporary Identifier
         # A temporary unique number that associated to a path for path operation
@@ -345,7 +351,8 @@ class Inventory:
 
         return self.content == other.content
 
-    def append_entry(self, is_untrack, piti, path):
+    def append_item(self, is_untrack, piti, path):
+        # Empty paths are directly ignored
         if not path:
             return
 
@@ -361,13 +368,13 @@ class Inventory:
         elif self.ignore_duplicated_path:
             return
 
-        self.content.append(InventoryEntry(is_untrack, piti, npath))
+        self.content.append(InventoryItem(is_untrack, piti, npath))
 
     def _append_path(self, path):
         if basename(path).startswith('.') and self.ignore_hidden:
             return
 
-        self.append_entry(False, None, path)
+        self.append_item(False, None, path)
 
     def append(self, path, expand=False, keep_empty_dir=False):
         if not expand:
@@ -394,9 +401,9 @@ class Inventory:
         self.piti_index = dict()
 
         start = 10 ** (len(str(len(self.content)))) + 1
-        for i, entry in enumerate(self.content, start=start):
-            entry.piti = str(i)
-            self.piti_index[entry.piti] = entry.path
+        for i, item in enumerate(self.content, start=start):
+            item.piti = str(i)
+            self.piti_index[item.piti] = item.path
 
     def get_path_by_piti(self, piti):
         return self.piti_index.get(piti)
@@ -405,7 +412,6 @@ class Inventory:
 class TrackOperation:
     def __init__(self, target):
         self.target = target
-        # self.item = item
 
     def __repr__(self):
         return '<Track {}>'.format(self.target)
@@ -419,12 +425,12 @@ class UntrackOperation:
         return '<Untrack {}>'.format(self.target)
 
 
-class RemoveOperation:
+class DeleteOperation:
     def __init__(self, target):
         self.target = target
 
     def __repr__(self):
-        return '<Remove {}>'.format(self.target)
+        return '<Delete {}>'.format(self.target)
 
 
 class RenameOperation:
@@ -454,26 +460,28 @@ class RotateRenameOperation:
 
 class ReferencedPathTree:
     def __init__(self, node_name):
-        self.name = node_name
+        self.name = node_name or '/'
         self.children = {}
-        self.entries = set()
+        self.changes = {}
 
-    def _add(self, node_list, entry):
-        self.entries.add(entry)
-
+    def _add(self, node_list, userpath, change):
         if not node_list:
+            if change:
+                if change not in self.changes:
+                    self.changes[change] = set()
+                self.changes[change].add(userpath)
             return
 
         if node_list[0] not in self.children:
             self.children[node_list[0]] = ReferencedPathTree(node_list[0])
 
-        self.children[node_list[0]]._add(node_list[1:], entry)
+        self.children[node_list[0]]._add(node_list[1:], userpath, change)
 
-    def add(self, path, entry):
-        if not path or not isinstance(path, str):
+    def add(self, userpath, change):
+        if not userpath or not isinstance(userpath, str):
             return
 
-        self._add(splitpath(xxxxpath(path).lstrip('/')), entry)
+        self._add(splitpath(xxxxpath(userpath).lstrip('/')), userpath, change)
 
     def _get(self, node_list):
         if not node_list:
@@ -491,10 +499,19 @@ class ReferencedPathTree:
         node_list = splitpath(xxxxpath(path).lstrip('/'))
         return self._get(node_list)
 
+    def walk(self):
+        yield self
+
+        for child in self.children.values():
+            for n in child.walk():
+                yield n
+
+    def __repr__(self):
+        return '<ReferencedPathTree {}>'.format(self.name)
+
     def to_lines(self):
         ret = []
-        ret.append(self.name + ' (' + ','.join(
-                sorted(str(i.piti) for i in self.entries)) + ')')
+        ret.append(self.name + ' (' + ','.join(self.changes) + ')')
 
         children = sorted(self.children)
         for idx, child in enumerate(children):
@@ -510,8 +527,8 @@ class ReferencedPathTree:
 
         return ret
 
-    def print(self):
-        print('\n'.join(self.to_lines()))
+    def print(self, print_func=print):
+        print_func('\n'.join(self.to_lines()))
 
 # -----------------------------------------------------------------------------
 # Containers
@@ -627,7 +644,7 @@ def aggregate_changes(change_list_raw):
 
     change_list_untrack = []
     change_list_track = []
-    change_list_remove = []
+    change_list_delete = []
     change_list_rename = []
 
     rename_chains = set()
@@ -639,8 +656,8 @@ def aggregate_changes(change_list_raw):
         elif isinstance(change, TrackOperation):
             change_list_track.append(change)
 
-        elif isinstance(change, RemoveOperation):
-            change_list_remove.append(change)
+        elif isinstance(change, DeleteOperation):
+            change_list_delete.append(change)
 
         elif isinstance(change, RenameOperation):
             rename_chains.add((change.src, change.dst))
@@ -652,20 +669,20 @@ def aggregate_changes(change_list_raw):
         this_chain = rename_chains.pop()
 
         add = None
-        remove = None
+        delete = None
         for other_chain in rename_chains:
             if realpath(this_chain[-1]) == realpath(other_chain[0]):
-                remove = other_chain
+                delete = other_chain
                 add = this_chain + other_chain[1:]
                 break
 
             elif realpath(other_chain[-1]) == realpath(this_chain[0]):
-                remove = other_chain
+                delete = other_chain
                 add = other_chain + this_chain[1:]
                 break
 
-        if remove:
-            rename_chains.remove(remove)
+        if delete:
+            rename_chains.remove(delete)
 
         if add:
             rename_chains.add(add)
@@ -682,7 +699,7 @@ def aggregate_changes(change_list_raw):
 
     return (change_list_untrack +
             change_list_track +
-            change_list_remove +
+            change_list_delete +
             sorted(change_list_rename, key=lambda x: x.targets[0]))
 
 # -----------------------------------------------------------------------------
@@ -731,7 +748,6 @@ def step_vim_edit_inventory(base, inventory):
         # Parse tempfile content
         new = Inventory()
         lines = []
-        errors = []
         with open(tf.name, mode='r', encoding='utf8') as f:
             for line in f:
                 line = line.rstrip('\n')
@@ -744,26 +760,13 @@ def step_vim_edit_inventory(base, inventory):
 
                 if rec.match(r'^(#?) *(\d+)\t(.*)$'):
                     untrack_mark, piti, path = rec.groups()
-                    new.append_entry(untrack_mark == '#', piti, path)
+                    new.append_item(untrack_mark == '#', piti, path)
 
                 elif line.startswith('#'):
                     continue
 
                 else:
-                    new.append_entry(False, None, line)
-
-    if errors:
-        for e in errors:
-            error(e)
-
-        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'], allow_empty_input=False)
-        if user_confirm == 'edit':
-            return (step_vim_edit_inventory, base, lines)
-
-        if user_confirm == 'redo':
-            return (step_vim_edit_inventory, base, base)
-
-        return (exit, 1)
+                    new.append_item(False, None, line)
 
     return (step_calculate_inventory_diff, base, new)
 
@@ -788,17 +791,13 @@ def step_calculate_inventory_diff(base, new):
     # -------------------------------------------------------------------------
 
     # 1. Construct meta data for checking piti and path duplications
-    tree = ReferencedPathTree('(root)')
     piti_count = {}
 
-    for entry in new:
-        npiti, npath = entry
+    for nitem in new:
+        npiti, npath = nitem
 
         if npiti is not None:
             piti_count[npiti] = piti_count.get(npiti, 0) + 1
-
-        if not entry.is_untrack:
-            tree.add(npath, entry)
 
     # 2. Construct bucket (indexed by piti)
     bucket = {'new':[]}
@@ -807,91 +806,72 @@ def step_calculate_inventory_diff(base, new):
     for opiti, opath in base:
         bucket[opiti] = opath
 
-    # 2.2 Put new inventory info bucket, do sanity check on the fly
-    for entry in new:
-        npiti, npath = entry
-
-        # Not allow empty path
-        if not npath:
-            entry.errors.add(EmptyPathError)
-
-        # Not allow invalid piti, of course piti=None skips this check
-        if npiti is not None and npiti not in bucket:
-            entry.errors.add(PitiError)
-
-        # Above errors are trivial enough to skip all remaining checks
-        if entry.errors:
-            continue
-
-        if not entry.is_untrack:
-            # Not allow duplicated path
-            tree_node = tree.get(npath)
-            if tree_node.entries != {entry}:
-                for e in tree_node.entries:
-                    e.errors.add(ConflictedPathError)
+    # 2.2 Put new inventory info bucket
+    for nitem in new:
+        npiti, npath = nitem
 
         # Handle newly-tracked path
         if npiti is None:
-            if exists(npath):
-                bucket['new'].append(npath)
-            else:
-                entry.errors.add(FileNotFoundError)
+            bucket['new'].append(npath)
+            continue
 
+        # Piti checks
         else:
-            # Not allow duplicated piti
-            if piti_count[npiti] > 1:
-                entry.errors.add(DuplicatedPitiError)
-
-            opath = bucket[npiti]
-
-            # Not allow writing to existing path
-            if exists(npath) and npath not in base and inode(npath) != inode(opath):
-                entry.errors.add(FileExistsError)
-
-            if entry.errors:
+            # Not allow invalid piti
+            if npiti not in bucket:
+                nitem.errors.add(PitiError)
                 continue
 
-            if entry.is_untrack:
-                bucket[npiti] = (opath, None)
-            else:
-                bucket[npiti] = (opath, npath)
+            # Not allow duplicated piti
+            if piti_count[npiti] > 1:
+                nitem.errors.add(DuplicatedPitiError)
+                continue
 
-    has_error = False
-    if PitiError in set(e for entry in new for e in entry.errors):
+        opath = bucket[npiti]
+
+        if nitem.is_untrack:
+            bucket[npiti] = (opath, None)
+        else:
+            bucket[npiti] = (opath, npath)
+
+    if PitiError in set(e for nitem in new for e in nitem.errors):
         piti_left_padding = '   '
     else:
         piti_left_padding = ''
 
-    for entry in new:
-        if entry.errors:
+    error_lines = []
+    for nitem in new:
+        if nitem.errors:
             line = ''
-            if entry.piti is not None:
-                if PitiError in entry.errors:
+            if nitem.piti is not None:
+                if PitiError in nitem.errors:
                     line += red('─►') + ' ' + red_bg(
-                            ('#' if entry.is_untrack else '') +
-                            entry.piti)
+                            ('#' if nitem.is_untrack else '') +
+                            nitem.piti)
                 else:
                     line += (piti_left_padding +
-                            ('#' if entry.is_untrack else '') +
-                            entry.piti)
+                            ('#' if nitem.is_untrack else '') +
+                            nitem.piti)
 
                 line += '  '
 
-            if ConflictedPathError in entry.errors:
-                line += red_bg(entry.path) + red(' ◄─ Conflicted path')
-            elif FileNotFoundError in entry.errors:
-                line += red_bg(entry.path) + red(' ◄─ Unknown path')
-            elif FileExistsError in entry.errors:
-                line += yellow_bg(entry.path) + yellow(' ◄─ Already exists')
-            elif EmptyPathError in entry.errors:
+            if ConflictedPathError in nitem.errors:
+                line += red_bg(nitem.path) + red(' ◄─ Conflicted path')
+            elif FileNotFoundError in nitem.errors:
+                line += red_bg(nitem.path) + red(' ◄─ Unknown path')
+            elif FileExistsError in nitem.errors:
+                line += yellow_bg(nitem.path) + yellow(' ◄─ Already exists')
+            elif EmptyPathError in nitem.errors:
                 line += red('() ◄─ Empty path')
             else:
-                line += entry.path + red(','.join(e.__name__ for e in entry.errors))
+                line += nitem.path + red(','.join(e.__name__ for e in nitem.errors))
 
+            error_lines.append(line)
+
+    if error_lines:
+        for line in error_lines:
             error(line)
-            has_error = True
 
-    if has_error:
         user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
                 allow_empty_input=False)
         if user_confirm == 'edit':
@@ -905,17 +885,16 @@ def step_calculate_inventory_diff(base, new):
     # 3. Construct change list from bucket
     # ('track', path)
     # ('untrack', path)
-    # ('remove', path)
+    # ('delete', path)
     # ('rename', src, dst)
     change_list_raw = []
     for piti in bucket:
         if piti == 'new':
             for path in bucket['new']:
-                if path not in base:
-                    change_list_raw.append(TrackOperation(path))
+                change_list_raw.append(TrackOperation(path))
 
-        elif isinstance(bucket[piti], str) and bucket[piti] not in bucket['new']:
-            change_list_raw.append(RemoveOperation(bucket[piti]))
+        elif isinstance(bucket[piti], str):
+            change_list_raw.append(DeleteOperation(bucket[piti]))
 
         elif isinstance(bucket[piti], tuple):
             opath = bucket[piti][0]
@@ -927,12 +906,69 @@ def step_calculate_inventory_diff(base, new):
             elif realpath(opath) != realpath(npath):
                 change_list_raw.append(RenameOperation(opath, npath))
 
+    return (step_check_change_list, base, new, change_list_raw)
+
+
+def step_check_change_list(base, new, change_list_raw):
+    tree = ReferencedPathTree(None)
+
+    for change in change_list_raw:
+        if isinstance(change, UntrackOperation):
+            pass
+
+        elif isinstance(change, TrackOperation):
+            tree.add(change.target, 'track')
+
+        elif isinstance(change, DeleteOperation):
+            tree.add(change.target, 'delete')
+
+        elif isinstance(change, RenameOperation):
+            tree.add(change.src, 'rename/from')
+            tree.add(change.dst, 'rename/to')
+
+    tree.print(debug)
+
+    error_nodes = []
+    for node in tree.walk():
+        if len(node.changes) < 2:
+            continue
+
+        if set(node.changes.keys()) == {'track', 'delete'}:
+            continue
+
+        error_nodes.append(node)
+
+    for idx, node in enumerate(error_nodes):
+        if idx:
+            print_stderr()
+
+        error('Conflicted operations:')
+        change_column_width = max(len(change) for change in node.changes)
+        for change, paths in node.changes.items():
+            for path in paths:
+                error('{} {}{}{}'.format(
+                    change.ljust(change_column_width),
+                    RLB,
+                    path,
+                    RRB
+                    ))
+
+    if error_nodes:
+        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
+                allow_empty_input=False)
+        if user_confirm == 'edit':
+            return (step_vim_edit_inventory, base, new)
+
+        if user_confirm == 'redo':
+            return (step_vim_edit_inventory, base, base)
+
+        return (exit, 1)
+
     return (step_confirm_change_list, base, new, change_list_raw)
 
 
 def step_confirm_change_list(base, new, change_list_raw):
     # If base inventory and new inventory is exactly the same, exit
-    debug(base == new)
     if base == new:
         info('No change')
         return (exit, 0)
@@ -946,8 +982,8 @@ def step_confirm_change_list(base, new, change_list_raw):
         elif isinstance(change, TrackOperation):
             print_path_with_prompt(info, cyan, 'Track:', change.target)
 
-        elif isinstance(change, RemoveOperation):
-            print_path_with_prompt(info, red, 'Remove:', change.target)
+        elif isinstance(change, DeleteOperation):
+            print_path_with_prompt(info, red, 'Delete:', change.target)
 
         elif isinstance(change, DominoRenameOperation):
             if len(change.targets) == 2:
@@ -1020,7 +1056,7 @@ def step_apply_change_list(base, new, change_list):
         elif isinstance(change, TrackOperation):
             print_path_with_prompt(info, cyan, 'Track:', change.target)
 
-        elif isinstance(change, RemoveOperation):
+        elif isinstance(change, DeleteOperation):
             cmd_list.append(('rm', change.target))
 
         elif isinstance(change, DominoRenameOperation):
