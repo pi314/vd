@@ -8,7 +8,6 @@
 #TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: Expand symlink with '@'
 #TODO: Cancel out untrack + track
-#TODO: auto shrinkuser() and expanduser()
 #TODO: -r/--recursive, with depth limit?
 #TODO: Refine error() API, centralize common handling
 
@@ -51,7 +50,7 @@ import types
 
 from enum import Enum
 from math import ceil, log10
-from os.path import split, dirname, basename, join, exists, isdir, islink, abspath, realpath
+from os.path import split, dirname, basename, join, exists, isdir, islink, abspath, realpath, expanduser
 from unicodedata import east_asian_width
 
 
@@ -146,6 +145,14 @@ def error(*args, **kwargs):
 
 def str_width(s):
     return sum(1 + (east_asian_width(c) in 'WF') for c in decolor(s))
+
+
+def shrinkuser(path):
+    homepath = expanduser('~').rstrip('/') + '/'
+    if path.startswith(homepath):
+        return join('~', path[len(homepath):])
+
+    return path
 
 
 def xxxxpath(path):
@@ -356,7 +363,7 @@ class Inventory:
         if not path:
             return
 
-        npath = normalize_path(path)
+        npath = normalize_path(expanduser(path))
 
         if piti and piti not in self.piti_index:
             self.piti_index[piti] = npath
@@ -543,7 +550,7 @@ def normalize_path(path):
         return ''
 
     npath = ''
-    if not path.startswith(('/', './', '../')) and path not in ('.', '..'):
+    if not path.startswith(('/', './', '../', '~/')) and path not in ('.', '..', '~'):
         npath = './'
 
     npath += path.rstrip('/')
@@ -730,7 +737,7 @@ def step_vim_edit_inventory(base, inventory):
                     if piti is None:
                         f.write(f'{path}\n')
                     else:
-                        f.write(f'{piti}\t{path}\n')
+                        f.write(f'{piti}\t{shrinkuser(path)}\n')
             else:
                 for line in inventory:
                     f.write(f'{line}\n')
