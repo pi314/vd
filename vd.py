@@ -416,7 +416,12 @@ class Inventory:
         return self.piti_index.get(piti)
 
 
-class TrackOperation:
+class VirtualOperation:
+    def __hash__(self):
+        return id(self)
+
+
+class TrackOperation(VirtualOperation):
     def __init__(self, target):
         self.target = target
 
@@ -424,7 +429,7 @@ class TrackOperation:
         return '<Track {}>'.format(self.target)
 
 
-class UntrackOperation:
+class UntrackOperation(VirtualOperation):
     def __init__(self, target):
         self.target = target
 
@@ -432,7 +437,7 @@ class UntrackOperation:
         return '<Untrack {}>'.format(self.target)
 
 
-class DeleteOperation:
+class DeleteOperation(VirtualOperation):
     def __init__(self, target):
         self.target = target
 
@@ -440,7 +445,7 @@ class DeleteOperation:
         return '<Delete {}>'.format(self.target)
 
 
-class RenameOperation:
+class RenameOperation(VirtualOperation):
     def __init__(self, src, dst):
         self.src = src
         self.dst = dst
@@ -449,7 +454,7 @@ class RenameOperation:
         return '<Rename {}>'.format(', '.join((self.src, self.dst)))
 
 
-class DominoRenameOperation:
+class DominoRenameOperation(VirtualOperation):
     def __init__(self, targets):
         self.targets = targets
 
@@ -457,7 +462,7 @@ class DominoRenameOperation:
         return '<Domino {}>'.format(', '.join(self.targets))
 
 
-class RotateRenameOperation:
+class RotateRenameOperation(VirtualOperation):
     def __init__(self, targets):
         self.targets = targets
 
@@ -468,27 +473,32 @@ class RotateRenameOperation:
 class ReferencedPathTree:
     def __init__(self, node_name):
         self.name = node_name or '/'
-        self.children = {}
-        self.changes = {}
+        self.children = dict()
+        self.tags = dict()
+        self.changes = set()
 
-    def _add(self, node_list, userpath, change):
+    def _add(self, node_list, userpath, tag, change):
         if not node_list:
+            if tag:
+                if tag not in self.tags:
+                    self.tags[tag] = set()
+                self.tags[tag].add(userpath)
             if change:
-                if change not in self.changes:
-                    self.changes[change] = set()
-                self.changes[change].add(userpath)
+                self.changes.add(change)
             return
 
         if node_list[0] not in self.children:
             self.children[node_list[0]] = ReferencedPathTree(node_list[0])
 
-        self.children[node_list[0]]._add(node_list[1:], userpath, change)
+        self.children[node_list[0]]._add(node_list[1:],
+                userpath, tag, change)
 
-    def add(self, userpath, change):
+    def add(self, userpath, tag, change):
         if not userpath or not isinstance(userpath, str):
             return
 
-        self._add(splitpath(xxxxpath(userpath).lstrip('/')), userpath, change)
+        self._add(splitpath(xxxxpath(userpath).lstrip('/')),
+                userpath, tag, change)
 
     def _get(self, node_list):
         if not node_list:
@@ -518,7 +528,7 @@ class ReferencedPathTree:
 
     def to_lines(self):
         ret = []
-        ret.append(self.name + ' (' + ','.join(self.changes) + ')')
+        ret.append(self.name + ' (' + ','.join(self.tags) + ')')
 
         children = sorted(self.children)
         for idx, child in enumerate(children):
@@ -790,20 +800,21 @@ def step_calculate_inventory_diff(base, new):
     # =========================================================================
     # Calculate inventory diff
     # -------------------------------------------------------------------------
-    # 1. Construct meta data for checking piti and path duplications
+    # 1. Count piti before hand
     # 2. Construct bucket (indexed by piti)
     # 2.1 Put base inventory into bucket
-    # 2.2 Put new inventory info bucket, do sanity check on the fly
-    # 3. Construct change list from bucket
+    # 2.2 Put new inventory info bucket
+    # 3. Check errors
+    # 4. Construct change list from bucket
     # -------------------------------------------------------------------------
 
-    # 1. Construct meta data for checking piti and path duplications
-    piti_count = {}
+    # 1. Count piti before hand
+    piti_count = dict()
 
     for nitem in new:
         npiti, npath = nitem
 
-        if npiti is not None:
+        if npiti is not None and not nitem.is_untrack:
             piti_count[npiti] = piti_count.get(npiti, 0) + 1
 
     # 2. Construct bucket (indexed by piti)
@@ -816,6 +827,8 @@ def step_calculate_inventory_diff(base, new):
     # 2.2 Put new inventory info bucket
     for nitem in new:
         npiti, npath = nitem
+        if nitem.is_untrack:
+            continue
 
         # Handle newly-tracked path
         if npiti is None:
@@ -841,6 +854,7 @@ def step_calculate_inventory_diff(base, new):
         else:
             bucket[npiti] = (opath, npath)
 
+    # 3. Check errors
     if PitiError in set(e for nitem in new for e in nitem.errors):
         piti_left_padding = '   '
     else:
@@ -868,10 +882,8 @@ def step_calculate_inventory_diff(base, new):
                 line += red_bg(nitem.path) + red(' ◄─ Unknown path')
             elif FileExistsError in nitem.errors:
                 line += yellow_bg(nitem.path) + yellow(' ◄─ Already exists')
-            elif EmptyPathError in nitem.errors:
-                line += red('() ◄─ Empty path')
             else:
-                line += nitem.path + red(','.join(e.__name__ for e in nitem.errors))
+                line += nitem.path + ' ◄─ ' + red(','.join(e.__name__ for e in nitem.errors))
 
             error_lines.append(line)
 
@@ -889,10 +901,10 @@ def step_calculate_inventory_diff(base, new):
 
         return (exit, 1)
 
-    # 3. Construct change list from bucket
-    # ('track', path)
-    # ('untrack', path)
-    # ('delete', path)
+    # 4. Construct change list from bucket
+    # ('track', target)
+    # ('untrack', target)
+    # ('delete', target)
     # ('rename', src, dst)
     change_list_raw = []
     for piti in bucket:
@@ -917,48 +929,87 @@ def step_calculate_inventory_diff(base, new):
 
 
 def step_check_change_list(base, new, change_list_raw):
+    # =========================================================================
+    # Check change list
+    # -------------------------------------------------------------------------
+    # 1. Put all referenced paths into tree
+    # 1.1 Put paths of new inventory items into tree
+    # 1.2 Put paths of changes into tree
+    # 2. Conflict operations and path checks
+    # 2.1 Check if there are multiple operations targets a single path
+    # 2.2 or change targets on a path that have children
+    # -------------------------------------------------------------------------
+
+    # 1. Put path(s) of changes into tree
     tree = ReferencedPathTree(None)
 
+    # 1.1 Put paths of new inventory items into tree
+    for nitem in new:
+        if nitem.is_untrack:
+            continue
+
+        tree.add(nitem.path, None, None)
+
+    # 1.2 Put paths of changes into tree
     for change in change_list_raw:
         if isinstance(change, UntrackOperation):
             pass
 
         elif isinstance(change, TrackOperation):
-            tree.add(change.target, 'track')
+            tree.add(change.target, 'track', change)
 
         elif isinstance(change, DeleteOperation):
-            tree.add(change.target, 'delete')
+            tree.add(change.target, 'delete', change)
 
         elif isinstance(change, RenameOperation):
-            tree.add(change.src, 'rename/from')
-            tree.add(change.dst, 'rename/to')
+            tree.add(change.src, 'rename/from', change)
+            tree.add(change.dst, 'rename/to', change)
 
     tree.print(debug)
 
+    # 2. Conflict operations and path checks
+    # 2. A risky policy is used: only explicit errors are forbidden
+    change_list_filtered = set()
     error_nodes = []
     for node in tree.walk():
-        if len(node.changes) < 2:
+        ok = True
+
+        # Cancel out track and untrack
+        if set(node.tags.keys()) == {'track', 'untrack'}:
             continue
 
-        if set(node.changes.keys()) == {'track', 'delete'}:
+        # Cancel out track and delete
+        elif set(node.tags.keys()) == {'track', 'delete'}:
             continue
 
-        error_nodes.append(node)
+        # Multiple operations on same path are not allowed
+        elif len(node.tags) > 1:
+            ok = False
+
+        # Check if the modify target has children
+        elif (set(node.tags.keys()) & {'delete', 'rename/from', 'rename/to'}
+                and node.children):
+            ok = False
+            err_msg = []
+            for tag in node.tags.keys():
+                for path in node.tags[tag]:
+                    err_msg.append((tag, path))
+
+            for path in node.children.keys():
+                err_msg.append(('', path))
+
+        if ok:
+            change_list_filtered |= node.changes
+        else:
+            error_nodes.append(err_msg)
 
     for idx, node in enumerate(error_nodes):
         if idx:
             print_stderr()
 
         error('Conflicted operations:')
-        change_column_width = max(len(change) for change in node.changes)
-        for change, paths in node.changes.items():
-            for path in paths:
-                error('{} {}{}{}'.format(
-                    change.ljust(change_column_width),
-                    RLB,
-                    path,
-                    RRB
-                    ))
+        for tag, path in err_msg:
+            error(tag, path)
 
     if error_nodes:
         user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
@@ -971,12 +1022,12 @@ def step_check_change_list(base, new, change_list_raw):
 
         return (exit, 1)
 
-    return (step_confirm_change_list, base, new, change_list_raw)
+    return (step_confirm_change_list, base, new, list(change_list_filtered))
 
 
 def step_confirm_change_list(base, new, change_list_raw):
     # If base inventory and new inventory is exactly the same, exit
-    if base == new:
+    if base == new or not change_list_raw:
         info('No change')
         return (exit, 0)
 
