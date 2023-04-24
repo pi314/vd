@@ -479,12 +479,17 @@ class ReferencedPathTree:
 
     def _add(self, node_list, userpath, tag, change):
         if not node_list:
-            if tag:
-                if tag not in self.tags:
-                    self.tags[tag] = set()
-                self.tags[tag].add(userpath)
+            if tag is not None and None in self.tags:
+                del self.tags[None]
+
+            if tag not in self.tags:
+                self.tags[tag] = set()
+
+            self.tags[tag].add(userpath)
+
             if change:
                 self.changes.add(change)
+
             return
 
         if node_list[0] not in self.children:
@@ -528,7 +533,7 @@ class ReferencedPathTree:
 
     def to_lines(self):
         ret = []
-        ret.append(self.name + ' (' + ','.join(self.tags) + ')')
+        ret.append(self.name + ' (' + ','.join((tag or 'tracking') for tag in self.tags) + ')')
 
         children = sorted(self.children)
         for idx, child in enumerate(children):
@@ -970,9 +975,9 @@ def step_check_change_list(base, new, change_list_raw):
     # 2. Conflict operations and path checks
     # 2. A risky policy is used: only explicit errors are forbidden
     change_list_filtered = set()
-    error_nodes = []
+    error_groups = []
     for node in tree.walk():
-        ok = True
+        error_group = []
 
         # Cancel out track and untrack
         if set(node.tags.keys()) == {'track', 'untrack'}:
@@ -984,34 +989,38 @@ def step_check_change_list(base, new, change_list_raw):
 
         # Multiple operations on same path are not allowed
         elif len(node.tags) > 1:
-            ok = False
+            for tag, refers in node.tags.items():
+                for refer in refers:
+                    error_group.append((tag, refer))
 
         # Check if the modify target has children
         elif (set(node.tags.keys()) & {'delete', 'rename/from', 'rename/to'}
                 and node.children):
-            ok = False
-            err_msg = []
-            for tag in node.tags.keys():
-                for path in node.tags[tag]:
-                    err_msg.append((tag, path))
+            for tag, refers in node.tags.items():
+                for refer in refers:
+                    error_group.append((tag, refer))
 
-            for path in node.children.keys():
-                err_msg.append(('', path))
+            for child_node in node.children.values():
+                for tag, refers in child_node.tags.items():
+                    for refer in refers:
+                        error_group.append((tag, refer))
 
-        if ok:
-            change_list_filtered |= node.changes
+        if error_group:
+            error_groups.append(error_group)
         else:
-            error_nodes.append(err_msg)
+            change_list_filtered |= node.changes
 
-    for idx, node in enumerate(error_nodes):
+    for idx, error_group in enumerate(error_groups):
         if idx:
             print_stderr()
 
         error('Conflicted operations:')
-        for tag, path in err_msg:
-            error(tag, path)
+        tag_column_width = max(len(tag or '(tracking)') for tag, path in error_group)
+        for tag, path in sorted(error_group,
+                key=lambda x: (x[0] is None, x[0], x[1])):
+            error(yellow((tag or '(tracking)').ljust(tag_column_width)), path)
 
-    if error_nodes:
+    if error_groups:
         user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
                 allow_empty_input=False)
         if user_confirm == 'edit':
