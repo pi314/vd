@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: Move (almost) all checks to change_list
-#====> Use ReferencedPathTree to check conflicted operations
 #TODO: Refine simple diff
 #TODO: meta_change_list
-#TODO: Expand dir, '*' for all and '+' for non-hidden entries
 #TODO: Expand symlink with '@'
 #TODO: Cancel out untrack + track
 #TODO: -r/--recursive, with depth limit?
@@ -429,6 +426,27 @@ class TrackOperation(VirtualOperation):
         return '<Track {}>'.format(self.target)
 
 
+class ExpandOperation(VirtualOperation):
+    def __init__(self, target):
+        if target.endswith('*'):
+            expansion_mark = '*'
+        elif target.endswith('+'):
+            expansion_mark = '+'
+
+        self.target = target.rstrip(expansion_mark)
+
+        self.expand_to = []
+        for f in os.listdir(self.target):
+            newpath = join(self.target, f)
+            if expansion_mark == '+' and f.startswith('.'):
+                continue
+
+            self.expand_to.append(newpath)
+
+    def __repr__(self):
+        return '<Expand {}>'.format(self.target)
+
+
 class UntrackOperation(VirtualOperation):
     def __init__(self, target):
         self.target = target
@@ -678,6 +696,9 @@ def aggregate_changes(change_list_raw):
         elif isinstance(change, TrackOperation):
             change_list_track.append(change)
 
+        elif isinstance(change, ExpandOperation):
+            change_list_track.append(change)
+
         elif isinstance(change, DeleteOperation):
             change_list_delete.append(change)
 
@@ -915,6 +936,9 @@ def step_calculate_inventory_diff(base, new):
             if bucket[piti][1] is None:
                 change_list_raw.append(UntrackOperation(opath))
 
+            elif isdir(opath) and (npath == join(opath, '*') or npath == join(opath, '+')):
+                change_list_raw.append(ExpandOperation(npath))
+
             elif realpath(opath) != realpath(npath):
                 change_list_raw.append(RenameOperation(opath, npath))
 
@@ -941,7 +965,8 @@ def step_check_change_list(base, new, change_list_raw):
         if nitem.is_untrack:
             continue
 
-        tree.add(nitem.path, None, None)
+        if not nitem.path.endswith(('*', '+')):
+            tree.add(nitem.path, None, None)
 
     # 1.2 Put paths of changes into tree
     for change in change_list_raw:
@@ -950,6 +975,10 @@ def step_check_change_list(base, new, change_list_raw):
 
         elif isinstance(change, TrackOperation):
             tree.add(change.target, 'track', change)
+
+        elif isinstance(change, ExpandOperation):
+            for f in change.expand_to:
+                tree.add(f, 'track', change)
 
         elif isinstance(change, DeleteOperation):
             tree.add(change.target, 'delete', change)
@@ -1035,7 +1064,10 @@ def step_confirm_change_list(base, new, change_list_raw):
             print_path_with_prompt(info, cyan, 'Untrack:', change.target)
 
         elif isinstance(change, TrackOperation):
-            print_path_with_prompt(info, cyan, 'Track:', change.target)
+                print_path_with_prompt(info, cyan, 'Track:', change.target)
+
+        elif isinstance(change, ExpandOperation):
+            print_path_with_prompt(info, cyan, 'Expand:', change.target)
 
         elif isinstance(change, DeleteOperation):
             print_path_with_prompt(info, red, 'Delete:', change.target)
@@ -1072,18 +1104,8 @@ def step_confirm_change_list(base, new, change_list_raw):
             warning(f'Unknown change: {change}')
 
     # If all changes are 'track' and 'untrack', apply the change directly
-    if (not change_list) or all({type(c) in (TrackOperation, UntrackOperation) for c in change_list}):
-        newnew = Inventory()
-        for item in new:
-            if item.piti is None or not item.is_untrack:
-                newnew.append(item.path)
-        newnew.build_index()
-
-        if not newnew:
-            info('No targets to edit')
-            return (exit, 0)
-
-        return (step_vim_edit_inventory, newnew, newnew)
+    if (not change_list) or all({type(c) in {TrackOperation, UntrackOperation, ExpandOperation} for c in change_list}):
+        return (step_expand_inventory, new)
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
     if user_confirm == 'yes':
@@ -1110,6 +1132,9 @@ def step_apply_change_list(base, new, change_list):
 
         elif isinstance(change, TrackOperation):
             print_path_with_prompt(info, cyan, 'Track:', change.target)
+
+        elif isinstance(change, ExpandOperation):
+            print_path_with_prompt(info, cyan, 'Expand:', change.target)
 
         elif isinstance(change, DeleteOperation):
             cmd_list.append(('rm', change.target))
@@ -1192,10 +1217,30 @@ def step_apply_change_list(base, new, change_list):
     for d in rmdirset:
         clean_up_empty_dir(d)
 
-    if any({type(c) in (TrackOperation, UntrackOperation) for c in change_list}):
-        return (step_vim_edit_inventory, new, new)
+    if any({type(c) in (TrackOperation, UntrackOperation, ExpandOperation) for c in change_list}):
+        return (step_expand_inventory, new)
 
     return (exit, 0)
+
+
+def step_expand_inventory(new):
+    newnew = Inventory()
+    for item in new:
+        if not item.is_untrack:
+            if item.path.endswith(('*', '+')):
+                operation = ExpandOperation(item.path)
+
+                for f in operation.expand_to:
+                    newnew.append(f)
+            else:
+                newnew.append(item.path)
+    newnew.build_index()
+
+    if not newnew:
+        info('No targets to edit')
+        return (exit, 0)
+
+    return (step_vim_edit_inventory, newnew, newnew)
 
 # -----------------------------------------------------------------------------
 # "Step" functions
