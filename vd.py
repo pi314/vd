@@ -4,7 +4,6 @@
 #TODO: Refine simple diff
 #TODO: meta_change_list
 #TODO: Expand symlink with '@'
-#TODO: Cancel out untrack + track
 #TODO: -r/--recursive, with depth limit?
 #TODO: Refine error() API, centralize common handling
 
