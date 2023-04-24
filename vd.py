@@ -283,7 +283,7 @@ def gen_tmp_file_name(path, postfix='.vdtmp.'):
 # Containers
 # -----------------------------------------------------------------------------
 
-class PitiError(Exception):
+class InvalidPitiError(Exception):
     pass
 
 class DuplicatedPitiError(Exception):
@@ -809,7 +809,7 @@ def step_calculate_inventory_diff(base, new):
     # 2. Construct bucket (indexed by piti)
     # 2.1 Put base inventory into bucket
     # 2.2 Put new inventory info bucket
-    # 3. Check errors
+    # 3. Check piti errors
     # 4. Construct change list from bucket
     # -------------------------------------------------------------------------
 
@@ -819,7 +819,7 @@ def step_calculate_inventory_diff(base, new):
     for nitem in new:
         npiti, npath = nitem
 
-        if npiti is not None and not nitem.is_untrack:
+        if npiti is not None:
             piti_count[npiti] = piti_count.get(npiti, 0) + 1
 
     # 2. Construct bucket (indexed by piti)
@@ -832,8 +832,6 @@ def step_calculate_inventory_diff(base, new):
     # 2.2 Put new inventory info bucket
     for nitem in new:
         npiti, npath = nitem
-        if nitem.is_untrack:
-            continue
 
         # Handle newly-tracked path
         if npiti is None:
@@ -844,7 +842,7 @@ def step_calculate_inventory_diff(base, new):
         else:
             # Not allow invalid piti
             if npiti not in bucket:
-                nitem.errors.add(PitiError)
+                nitem.errors.add(InvalidPitiError)
                 continue
 
             # Not allow duplicated piti
@@ -859,36 +857,26 @@ def step_calculate_inventory_diff(base, new):
         else:
             bucket[npiti] = (opath, npath)
 
-    # 3. Check errors
-    if PitiError in set(e for nitem in new for e in nitem.errors):
-        piti_left_padding = '   '
-    else:
-        piti_left_padding = ''
-
+    # 3. Check piti errors
     error_lines = []
     for nitem in new:
         if nitem.errors:
             line = ''
             if nitem.piti is not None:
-                if PitiError in nitem.errors:
-                    line += red('─►') + ' ' + red_bg(
-                            ('#' if nitem.is_untrack else '') +
-                            nitem.piti)
-                else:
-                    line += (piti_left_padding +
-                            ('#' if nitem.is_untrack else '') +
-                            nitem.piti)
+                line += (red_bg if nitem.errors else lambda x: x)(
+                        ('#' if nitem.is_untrack else '') + nitem.piti
+                        )
 
                 line += '  '
 
-            if ConflictedPathError in nitem.errors:
-                line += red_bg(nitem.path) + red(' ◄─ Conflicted path')
-            elif FileNotFoundError in nitem.errors:
-                line += red_bg(nitem.path) + red(' ◄─ Unknown path')
-            elif FileExistsError in nitem.errors:
-                line += yellow_bg(nitem.path) + yellow(' ◄─ Already exists')
+            if InvalidPitiError in nitem.errors:
+                line += nitem.path + red(' ◄─ Invalid key')
+            elif DuplicatedPitiError in nitem.errors:
+                line += nitem.path + red(' ◄─ Duplicated key')
+            elif nitem.errors:
+                line += nitem.path + red(' ◄─ ' + ','.join(e.__name__ for e in path_errors))
             else:
-                line += nitem.path + ' ◄─ ' + red(','.join(e.__name__ for e in nitem.errors))
+                line += nitem.path
 
             error_lines.append(line)
 
@@ -958,7 +946,7 @@ def step_check_change_list(base, new, change_list_raw):
     # 1.2 Put paths of changes into tree
     for change in change_list_raw:
         if isinstance(change, UntrackOperation):
-            pass
+            tree.add(change.target, 'untrack', change)
 
         elif isinstance(change, TrackOperation):
             tree.add(change.target, 'track', change)
@@ -977,15 +965,15 @@ def step_check_change_list(base, new, change_list_raw):
     change_list_filtered = set()
     error_groups = []
     for node in tree.walk():
+        ok_changes = node.changes.copy()
         error_group = []
 
-        # Cancel out track and untrack
-        if set(node.tags.keys()) == {'track', 'untrack'}:
-            continue
+        # Cancel out track and untrack/delete, results in track
+        if set(node.tags.keys()) in [{'track', 'untrack'}, {'track', 'delete'}]:
+            ok_changes = set(c for c in ok_changes if isinstance(c, TrackOperation))
 
-        # Cancel out track and delete
-        elif set(node.tags.keys()) == {'track', 'delete'}:
-            continue
+        elif set(node.tags.keys()) == {'rename/to', 'rename/from'}:
+            pass
 
         # Multiple operations on same path are not allowed
         elif len(node.tags) > 1:
@@ -1008,7 +996,7 @@ def step_check_change_list(base, new, change_list_raw):
         if error_group:
             error_groups.append(error_group)
         else:
-            change_list_filtered |= node.changes
+            change_list_filtered |= ok_changes
 
     for idx, error_group in enumerate(error_groups):
         if idx:
@@ -1036,7 +1024,7 @@ def step_check_change_list(base, new, change_list_raw):
 
 def step_confirm_change_list(base, new, change_list_raw):
     # If base inventory and new inventory is exactly the same, exit
-    if base == new or not change_list_raw:
+    if base == new:
         info('No change')
         return (exit, 0)
 
@@ -1084,7 +1072,7 @@ def step_confirm_change_list(base, new, change_list_raw):
             warning(f'Unknown change: {change}')
 
     # If all changes are 'track' and 'untrack', apply the change directly
-    if change_list and all({type(c) in (TrackOperation, UntrackOperation) for c in change_list}):
+    if (not change_list) or all({type(c) in (TrackOperation, UntrackOperation) for c in change_list}):
         newnew = Inventory()
         for item in new:
             if item.piti is None or not item.is_untrack:
