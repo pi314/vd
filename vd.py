@@ -1273,10 +1273,6 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         )
 
-    parser.add_argument('-n', '--dry-run', action='store_true',
-            default=False,
-            help='Perform a trial run with no changes made')
-
     parser.add_argument('-a', '--all', action='store_true',
             default=False,
             help='Include hidden paths')
