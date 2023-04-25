@@ -8,7 +8,6 @@
 #TODO: Refine error() API, centralize common handling
 
 # Vim related
-#TODO: vim default config
 #TODO: Print some hints on top
 #TODO: Respect LS_COLORS by utilizing bits in PITI
 
@@ -45,13 +44,15 @@ import types
 
 from enum import Enum
 from math import ceil, log10
-from os.path import split, dirname, basename, join, exists, isdir, islink, abspath, realpath, expanduser
+from os.path import split, dirname, basename, join, exists, isdir, islink, isfile, abspath, realpath, expanduser, expandvars
 from unicodedata import east_asian_width
 
 
 # =============================================================================
 # Global option
 # -----------------------------------------------------------------------------
+
+VD_VIMRC_PATH = expanduser(join('~/.config', 'vd', 'vd.vimrc'))
 
 opt_diff_style = None
 
@@ -778,18 +779,12 @@ def step_vim_edit_inventory(base, inventory):
             f.flush()
 
         # Invoke vim to edit item list
-        sub.call([
-            'vim', tf.name,
-            '+set nonu',
-            '+set syntax=python',
-            '+set tabstop=8',
-            '+nnoremap K :move -2<CR>',
-            '+nnoremap J :move +1<CR>',
-            '+nnoremap cc ^WC',
-            '+nnoremap C ^WC',
-            ],
-            stdin=open('/dev/tty')
-            )
+        cmd = ['vim', tf.name]
+
+        if isfile(VD_VIMRC_PATH):
+            cmd += ['+source ' + VD_VIMRC_PATH]
+
+        sub.call(cmd, stdin=open('/dev/tty'))
 
         # Parse tempfile content
         new = Inventory()
@@ -1250,6 +1245,43 @@ def step_expand_inventory(new):
 # =============================================================================
 
 
+def open_vd_vimrc():
+    os.makedirs(dirname(VD_VIMRC_PATH), exist_ok=True)
+
+    if exists(VD_VIMRC_PATH) and not isfile(VD_VIMRC_PATH):
+        error(VD_VIMRC_PATH, 'exists and is not a file')
+        return 1
+
+    if not exists(VD_VIMRC_PATH):
+        # deploy a new one
+        with open(VD_VIMRC_PATH, 'w') as vd_vimrc:
+            vd_vimrc.write('''
+" =============================================================================
+" vd vimrc
+" =============================================================================
+
+" Turn off line number for not interfere with item key
+set nonu
+
+" Just highlight some keyword for help reading
+set syntax=python
+
+" Set a wide gap between item key and path
+set tabstop=8
+
+" Move items up and down
+nnoremap K :move -2<CR>
+nnoremap J :move +1<CR>
+
+" Rename item
+nnoremap cc ^WC
+nnoremap C ^WC
+'''.lstrip())
+
+    print(VD_VIMRC_PATH)
+    return sub.call(['vim', VD_VIMRC_PATH])
+
+
 # =============================================================================
 # Main function
 # =============================================================================
@@ -1281,6 +1313,10 @@ def main():
             type=lambda x: DiffStyle[x],
             help='Specify diff style')
 
+    parser.add_argument('--vimrc', action='store_true',
+            default=False,
+            help='Edit or create the vimrc for vd')
+
     parser.add_argument('targets', nargs='*',
             help='Paths to edit, directories are expanded')
 
@@ -1289,6 +1325,9 @@ def main():
     if not sys.stdout.isatty() or not sys.stderr.isatty():
         error('Both stdout and stderr must be tty')
         exit(1)
+
+    if options.vimrc:
+        exit(open_vd_vimrc())
 
     opt_diff_style = options.diff_style
 
