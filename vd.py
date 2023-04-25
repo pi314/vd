@@ -8,7 +8,6 @@
 #TODO: Refine error() API, centralize common handling
 
 # Vim related
-#TODO: nnoremap J/K to move item downward/upward
 #TODO: vim default config
 #TODO: Print some hints on top
 #TODO: Respect LS_COLORS by utilizing bits in PITI
@@ -783,7 +782,12 @@ def step_vim_edit_inventory(base, inventory):
             'vim', tf.name,
             '+set nonu',
             '+set syntax=python',
-            '+set tabstop=8'],
+            '+set tabstop=8',
+            '+nnoremap K :move -2<CR>',
+            '+nnoremap J :move +1<CR>',
+            '+nnoremap cc ^WC',
+            '+nnoremap C ^WC',
+            ],
             stdin=open('/dev/tty')
             )
 
