@@ -179,6 +179,17 @@ def splitpath(path):
     return path.split('/')
 
 
+def sorted_as_filename(ls):
+    def filename_key(name):
+        def int_or_not(x):
+            if x and x[0] in '1234567890':
+                return int(x)
+            return x
+        return tuple(int_or_not(x) for x in re.split(r'(\d+)', name))
+
+    return sorted(ls, key=filename_key)
+
+
 class UserSelection:
     def __init__(self, options):
         self.options = dict()
@@ -387,7 +398,7 @@ class Inventory:
             self._append_path(path)
 
         elif isdir(path) and not islink(path):
-            ls = sorted(os.listdir(path))
+            ls = sorted_as_filename(os.listdir(path))
             for i in ls:
                 self._append_path(join(path, i))
 
@@ -435,7 +446,7 @@ class ExpandOperation(VirtualOperation):
         self.target = target.rstrip(expansion_mark)
 
         self.expand_to = []
-        for f in os.listdir(self.target):
+        for f in sorted_as_filename(os.listdir(self.target)):
             newpath = join(self.target, f)
             if expansion_mark == '+' and f.startswith('.'):
                 continue
@@ -552,7 +563,7 @@ class ReferencedPathTree:
         ret = []
         ret.append(self.name + ' (' + ','.join((tag or 'tracking') for tag in self.tags) + ')')
 
-        children = sorted(self.children)
+        children = sorted_as_filename(self.children)
         for idx, child in enumerate(children):
             if idx == len(children) - 1:
                 prefix = ['└─ ', '   ']
