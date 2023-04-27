@@ -1352,7 +1352,7 @@ def main():
 
     targets = []
 
-    for target in options.targets:
+    for target in sorted_as_filename(options.targets):
         targets.append((target, True))
 
     if not sys.stdin.isatty():
