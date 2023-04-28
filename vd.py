@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: rename/to existing file should be error
 #TODO: Refine simple diff
-#TODO: Refine error() API, centralize common handling
 #TODO: Expand symlink with '@'
 #TODO: -r/--recursive, with depth limit?
 
@@ -133,8 +131,25 @@ def warning(*args, **kwargs):
     print_msg(yellow('[Warning]'), print_stderr, *args, **kwargs)
 
 
+error_lines = []
+def errorq(*args, **kwargs):
+    error_lines.append((args, kwargs))
+
+
+def errorflush():
+    for a, ka in error_lines:
+        print_msg(red('[Error]'), print_stderr, *a, **ka)
+
+    error_lines.clear()
+
+
 def error(*args, **kwargs):
+    errorflush()
     print_msg(red('[Error]'), print_stderr, *args, **kwargs)
+
+
+def has_error():
+    return bool(error_lines)
 
 
 def str_width(s):
@@ -505,13 +520,14 @@ class ReferencedPathTree:
 
     def _add(self, node_list, userpath, tag, change):
         if not node_list:
-            if tag is not None and None in self.tags:
-                del self.tags[None]
+            if None in self.tags:
+                if tag in ('rename/from', 'delete', 'untrack'):
+                    del self.tags[None]
 
             if tag not in self.tags:
-                self.tags[tag] = set()
+                self.tags[tag] = []
 
-            self.tags[tag].add(userpath)
+            self.tags[tag].append(userpath)
 
             if change:
                 self.changes.add(change)
@@ -559,7 +575,9 @@ class ReferencedPathTree:
 
     def to_lines(self):
         ret = []
-        ret.append(self.name + ' (' + ','.join((tag or 'tracking') for tag in self.tags) + ')')
+        ret.append(self.name + ' (' + ','.join(
+            (tag or 'tracking')
+            for tag in self.tags) + ')')
 
         children = sorted_as_filename(self.children)
         for idx, child in enumerate(children):
@@ -918,7 +936,6 @@ def step_calculate_inventory_diff(base, new):
             bucket[npiti] = (nitem, opath, npath)
 
     # 3. Check piti errors
-    error_lines = []
     for nitem in new:
         if nitem.errors:
             line = ''
@@ -938,10 +955,10 @@ def step_calculate_inventory_diff(base, new):
             else:
                 line += nitem.path
 
-            error_lines.append(line)
+            errorq(line)
 
-    if error_lines:
-        return (step_ask_fix_it, error_lines, base, new)
+    if has_error():
+        return (step_ask_fix_it, base, new)
 
     # 4. Construct change list from bucket
     # ('track', target)
@@ -949,14 +966,13 @@ def step_calculate_inventory_diff(base, new):
     # ('delete', target)
     # ('rename', src, dst)
     change_list_raw = []
-    error_lines = []
     for piti in bucket:
         if piti == 'new':
             for _, path in bucket['new']:
                 if exists(path):
                     change_list_raw.append(TrackOperation(path))
                 else:
-                    error_lines.append(red(nitem.path + ' ◄─ Not exists'))
+                    errorq(red(nitem.path + ' ◄─ Not exists'))
 
         elif isinstance(bucket[piti], str):
             change_list_raw.append(DeleteOperation(bucket[piti]))
@@ -975,7 +991,7 @@ def step_calculate_inventory_diff(base, new):
                 if isdir(opath):
                     change_list_raw.append(ExpandOperation(npath))
                 else:
-                    error_lines.append(nitem.piti + '  ' +
+                    errorq(nitem.piti + '  ' +
                             red(nitem.path + ' ◄─ Cannot expand file'))
 
             elif realpath(opath) != realpath(npath):
@@ -986,15 +1002,14 @@ def step_calculate_inventory_diff(base, new):
                 # Nothing changed for this piti
                 pass
 
-    if error_lines:
-        return (step_ask_fix_it, error_lines, base, new)
+    if has_error():
+        return (step_ask_fix_it, base, new)
 
     return (step_check_change_list, base, new, change_list_raw)
 
 
-def step_ask_fix_it(error_lines, base, new):
-    for line in error_lines:
-        error(line)
+def step_ask_fix_it(base, new):
+    errorflush()
 
     user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
             allow_empty_input=False)
@@ -1012,7 +1027,7 @@ def step_check_change_list(base, new, change_list_raw):
     # Check change list
     # -------------------------------------------------------------------------
     # 1. Put all referenced paths into tree
-    # 1.1 Put paths of new inventory items into tree
+    # 1.1 Put paths of base inventory items into tree
     # 1.2 Put paths of changes into tree
     # 2. Conflict operations and path checks
     # 2.1 Check if there are multiple operations targets a single path
@@ -1023,12 +1038,12 @@ def step_check_change_list(base, new, change_list_raw):
     tree = ReferencedPathTree(None)
 
     # 1.1 Put paths of new inventory items into tree
-    for nitem in new:
-        if nitem.is_untrack:
+    for oitem in base:
+        if oitem.is_untrack:
             continue
 
-        if not nitem.path.endswith(('*', '+')):
-            tree.add(nitem.path, None, None)
+        if not oitem.path.endswith(('*', '+')):
+            tree.add(oitem.path, None, None)
 
     # 1.2 Put paths of changes into tree
     for change in change_list_raw:
@@ -1049,7 +1064,7 @@ def step_check_change_list(base, new, change_list_raw):
             tree.add(change.src, 'rename/from', change)
             tree.add(change.dst, 'rename/to', change)
 
-    if False:
+    if True:
         tree.print(debug)
 
     # 2. Conflict operations and path checks
@@ -1078,6 +1093,13 @@ def step_check_change_list(base, new, change_list_raw):
                 for refer in refers:
                     error_group.append((tag, refer))
 
+        elif len(node.tags.get('rename/to', [])) > 1:
+            for change in node.changes:
+                debug(error_group)
+                error_group.append(('rename/from', change.src))
+                error_group.append(('rename/to', change.dst))
+                debug(error_group)
+
         # Check if the modify target has children
         elif (set(node.tags.keys()) & {'delete', 'rename/from', 'rename/to'}
                 and node.children):
@@ -1095,19 +1117,18 @@ def step_check_change_list(base, new, change_list_raw):
         else:
             change_list_filtered |= ok_changes
 
-    error_lines = []
     for idx, error_group in enumerate(error_groups):
         if idx:
-            print_stderr()
+            errorq()
 
-        error_lines.append('Conflicted operations:')
+        errorq('Conflicted operations:')
         tag_column_width = max(len(tag or '(tracking)') for tag, path in error_group)
         for tag, path in sorted(error_group,
                 key=lambda x: (x[0] is None, x[0], x[1])):
-            error_lines.append(yellow((tag or '(tracking)').ljust(tag_column_width)) + ' ' + path)
+            errorq(yellow((tag or '(tracking)').ljust(tag_column_width)) + ' ' + path)
 
     if error_groups:
-        return (step_ask_fix_it, error_lines, base, new)
+        return (step_ask_fix_it, base, new)
 
     return (step_confirm_change_list, base, new, list(change_list_filtered))
 
@@ -1466,19 +1487,20 @@ def main():
             next_call = func(*args)
             prev_call = (func, *args)
         except TypeError as e:
-            error(e)
-            error(f'prev_call.func = {name(prev_call[0])}')
-            error(f'prev_call.args = (')
+            errorq(e)
+            errorq(f'prev_call.func = {name(prev_call[0])}')
+            errorq(f'prev_call.args = (')
             for a in prev_call[1:]:
-                error(f'    {repr(a)}')
-            error(')')
+                errorq(f'    {repr(a)}')
+            errorq(')')
 
-            error()
-            error(f'next_call.func = {name(next_call[0])}')
-            error(f'next_call.args = (')
+            errorq()
+            errorq(f'next_call.func = {name(next_call[0])}')
+            errorq(f'next_call.args = (')
             for a in next_call[1:]:
-                error(f'    {repr(a)}')
-            error(')')
+                errorq(f'    {repr(a)}')
+            errorq(')')
+            errorflush()
 
             raise e
 
