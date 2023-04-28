@@ -51,9 +51,9 @@ from unicodedata import east_asian_width
 # Global option
 # -----------------------------------------------------------------------------
 
-VD_VIMRC_PATH = expanduser(join('~/.config', 'vd', 'vd.vimrc'))
-
 opt_diff_style = None
+
+VD_VIMRC_PATH = expanduser(join('~/.config', 'vd', 'vd.vimrc'))
 
 
 # =============================================================================
@@ -770,17 +770,24 @@ def aggregate_changes(change_list_raw):
 # although they are not going to use it at all.
 # -----------------------------------------------------------------------------
 
-hint_text = ('''
-# ''' + ('=' * (screen_width() - 5)) + '''
+hint_text_sepline = '# ' + ('=' * (screen_width() - 5))
+
+hint_text = '''
 # - Prefix an item with '#' to untrack it.
 # - Add a path to track it.
 # - Sort it as you want.
-# - (vim) J to move an item down by one
-# - (vim) K to move an item up by one
 # - path/* to expand the directory
-# ''' + ('=' * (screen_width() - 5)) + '''
+'''.strip()
 
-''').lstrip()
+def hint_text_vimrc():
+    if isfile(VD_VIMRC_PATH):
+        return '# - Configure hotkeys in ~/.config/vd/vd.vimrc'
+    else:
+        return '''
+# - Setup default vd.vimrc with
+#   $ vd --vimrc
+'''.strip()
+
 
 def step_vim_edit_inventory(base, inventory):
     if exists('exit'):
@@ -789,24 +796,33 @@ def step_vim_edit_inventory(base, inventory):
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
-            f.write(hint_text)
+            def writeline(line=''):
+                f.write(line + '\n')
+
+            writeline(hint_text_sepline)
+            writeline(hint_text)
+            writeline(hint_text_vimrc())
+            writeline(hint_text_sepline)
+            writeline()
 
             if isinstance(inventory, Inventory):
                 for piti, path in inventory:
                     if piti is None:
-                        f.write(f'{path}\n')
+                        writeline(f'{path}')
                     else:
-                        f.write(f'{piti}\t{shrinkuser(path)}\n')
+                        writeline(f'{piti}\t{shrinkuser(path)}')
             else:
                 for line in inventory:
-                    f.write(f'{line}\n')
+                    writeline(f'{line}')
             f.flush()
 
         # Invoke vim to edit item list
-        cmd = ['vim', tf.name, '+normal }j']
+        cmd = ['vim', tf.name, '+normal }']
 
         if isfile(VD_VIMRC_PATH):
             cmd += ['+source ' + VD_VIMRC_PATH]
+        else:
+            cmd += ['+set nonu']
 
         sub.call(cmd, stdin=open('/dev/tty'))
 
