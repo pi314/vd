@@ -7,7 +7,7 @@ A modern Python implementation of ``vidir`` that specialized for vim, plus:
 * Prompt for your confirm before applying the change(s)
 * Displays an (arguably) pretty-looking preview of the changes
 * Width-aligned sequence number for (arguably) convenient visual block operation
-* Stage/unstage items dynamically
+* Stage/unstage items dynamically, with paths sorted naturally
 
 
 Related Projects

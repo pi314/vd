@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 
 # Mandatory
+#TODO: delete+rename/to should be ok
+#TODO: rename/to existing file should be error
 #TODO: Refine simple diff
-#TODO: meta_change_list
+#TODO: Refine error() API, centralize common handling
 #TODO: Expand symlink with '@'
 #TODO: -r/--recursive, with depth limit?
-#TODO: Refine error() API, centralize common handling
 
 # Vim related
 #TODO: Respect LS_COLORS by utilizing bits in PITI
 
 # Enhancement
 #TODO: If user change dir trailing slash to .tar, tar it
-#TODO: Add -e/-E: always/not expand path for the first parsing
 #TODO: Provide directives for adding new entries like {file} {dir}
 #====> let user use :r !find themself?
 
@@ -776,7 +776,8 @@ hint_text = '''
 # - Prefix an item with '#' to untrack it.
 # - Add a path to track it.
 # - Sort it as you want.
-# - path/* to expand the directory
+# - path/to/directory/+ to expand non-hidden items
+# - path/to/directory/* to expand all items
 '''.strip()
 
 def hint_text_vimrc():
@@ -866,7 +867,7 @@ def step_calculate_inventory_diff(base, new):
     # Calculate inventory diff
     # -------------------------------------------------------------------------
     # 1. Count piti before hand
-    # 2. Construct bucket (indexed by piti)
+    # 2. Construct a piti-indexed bucket to join base and new inventories
     # 2.1 Put base inventory into bucket
     # 2.2 Put new inventory info bucket
     # 3. Check piti errors
@@ -882,7 +883,7 @@ def step_calculate_inventory_diff(base, new):
         if npiti is not None:
             piti_count[npiti] = piti_count.get(npiti, 0) + 1
 
-    # 2. Construct bucket (indexed by piti)
+    # 2. Construct a piti-indexed bucket to join base and new inventories
     bucket = {'new':[]}
 
     # 2.1 Put base inventory into bucket
@@ -895,7 +896,7 @@ def step_calculate_inventory_diff(base, new):
 
         # Handle newly-tracked path
         if npiti is None:
-            bucket['new'].append(npath)
+            bucket['new'].append((nitem, npath))
             continue
 
         # Piti checks
@@ -913,9 +914,9 @@ def step_calculate_inventory_diff(base, new):
         opath = bucket[npiti]
 
         if nitem.is_untrack:
-            bucket[npiti] = (opath, None)
+            bucket[npiti] = (nitem, opath, None)
         else:
-            bucket[npiti] = (opath, npath)
+            bucket[npiti] = (nitem, opath, npath)
 
     # 3. Check piti errors
     error_lines = []
@@ -941,18 +942,7 @@ def step_calculate_inventory_diff(base, new):
             error_lines.append(line)
 
     if error_lines:
-        for line in error_lines:
-            error(line)
-
-        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
-                allow_empty_input=False)
-        if user_confirm == 'edit':
-            return (step_vim_edit_inventory, base, new)
-
-        if user_confirm == 'redo':
-            return (step_vim_edit_inventory, base, base)
-
-        return (exit, 1)
+        return (step_ask_fix_it, error_lines, base, new)
 
     # 4. Construct change list from bucket
     # ('track', target)
@@ -960,28 +950,62 @@ def step_calculate_inventory_diff(base, new):
     # ('delete', target)
     # ('rename', src, dst)
     change_list_raw = []
+    error_lines = []
     for piti in bucket:
         if piti == 'new':
-            for path in bucket['new']:
-                change_list_raw.append(TrackOperation(path))
+            for _, path in bucket['new']:
+                if exists(path):
+                    change_list_raw.append(TrackOperation(path))
+                else:
+                    error_lines.append(red(nitem.path + ' ◄─ Not exists'))
 
         elif isinstance(bucket[piti], str):
             change_list_raw.append(DeleteOperation(bucket[piti]))
 
         elif isinstance(bucket[piti], tuple):
-            opath = bucket[piti][0]
-            npath = bucket[piti][1]
+            nitem = bucket[piti][0]
+            opath = bucket[piti][1]
+            npath = bucket[piti][2]
 
-            if bucket[piti][1] is None:
+            if npath is None:
+                # Untrack
                 change_list_raw.append(UntrackOperation(opath))
 
-            elif isdir(opath) and (npath == join(opath, '*') or npath == join(opath, '+')):
-                change_list_raw.append(ExpandOperation(npath))
+            elif npath == join(opath, '*') or npath == join(opath, '+'):
+                # Expand
+                if isdir(opath):
+                    change_list_raw.append(ExpandOperation(npath))
+                else:
+                    error_lines.append(nitem.piti + '  ' +
+                            red(nitem.path + ' ◄─ Cannot expand file'))
 
             elif realpath(opath) != realpath(npath):
+                # Rename
                 change_list_raw.append(RenameOperation(opath, npath))
 
+            else:
+                # Nothing changed for this piti
+                pass
+
+    if error_lines:
+        return (step_ask_fix_it, error_lines, base, new)
+
     return (step_check_change_list, base, new, change_list_raw)
+
+
+def step_ask_fix_it(error_lines, base, new):
+    for line in error_lines:
+        error(line)
+
+    user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
+            allow_empty_input=False)
+    if user_confirm == 'edit':
+        return (step_vim_edit_inventory, base, new)
+
+    if user_confirm == 'redo':
+        return (step_vim_edit_inventory, base, base)
+
+    return (exit, 1)
 
 
 def step_check_change_list(base, new, change_list_raw):
@@ -1067,26 +1091,19 @@ def step_check_change_list(base, new, change_list_raw):
         else:
             change_list_filtered |= ok_changes
 
+    error_lines = []
     for idx, error_group in enumerate(error_groups):
         if idx:
             print_stderr()
 
-        error('Conflicted operations:')
+        error_lines.append('Conflicted operations:')
         tag_column_width = max(len(tag or '(tracking)') for tag, path in error_group)
         for tag, path in sorted(error_group,
                 key=lambda x: (x[0] is None, x[0], x[1])):
-            error(yellow((tag or '(tracking)').ljust(tag_column_width)), path)
+            error_lines.append(yellow((tag or '(tracking)').ljust(tag_column_width)) + ' ' + path)
 
     if error_groups:
-        user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
-                allow_empty_input=False)
-        if user_confirm == 'edit':
-            return (step_vim_edit_inventory, base, new)
-
-        if user_confirm == 'redo':
-            return (step_vim_edit_inventory, base, base)
-
-        return (exit, 1)
+        return (step_ask_fix_it, error_lines, base, new)
 
     return (step_confirm_change_list, base, new, list(change_list_filtered))
 
@@ -1317,7 +1334,7 @@ nnoremap J :move +1<CR>
 
 " Rename item
 nnoremap cc ^WC
-nnoremap C ^WC
+nnoremap S ^WC
 '''.lstrip())
 
     print(VD_VIMRC_PATH)
