@@ -1087,6 +1087,14 @@ def step_check_change_list(base, new, change_list_raw):
         elif set(node.tags.keys()) == {'delete', 'rename/to'}:
             pass
 
+        elif node.tags.keys() == {'rename/to'} and \
+                any(exists(refer) for refer in node.tags['rename/to']):
+            for refer in node.tags['rename/to']:
+                error_group.append(('rename/to', refer))
+
+                if exists(refer):
+                    error_group.append(('(exists)', refer))
+
         # Multiple operations on same path are not allowed
         elif len(node.tags) > 1:
             for tag, refers in node.tags.items():
