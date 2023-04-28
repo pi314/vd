@@ -8,7 +8,6 @@
 #TODO: Refine error() API, centralize common handling
 
 # Vim related
-#TODO: Print some hints on top
 #TODO: Respect LS_COLORS by utilizing bits in PITI
 
 # Enhancement
@@ -771,6 +770,18 @@ def aggregate_changes(change_list_raw):
 # although they are not going to use it at all.
 # -----------------------------------------------------------------------------
 
+hint_text = ('''
+# ''' + ('=' * (screen_width() - 5)) + '''
+# - Prefix an item with '#' to untrack it.
+# - Add a path to track it.
+# - Sort it as you want.
+# - (vim) J to move an item down by one
+# - (vim) K to move an item up by one
+# - path/* to expand the directory
+# ''' + ('=' * (screen_width() - 5)) + '''
+
+''').lstrip()
+
 def step_vim_edit_inventory(base, inventory):
     if exists('exit'):
         return (exit, 1)
@@ -778,6 +789,8 @@ def step_vim_edit_inventory(base, inventory):
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
+            f.write(hint_text)
+
             if isinstance(inventory, Inventory):
                 for piti, path in inventory:
                     if piti is None:
@@ -790,7 +803,7 @@ def step_vim_edit_inventory(base, inventory):
             f.flush()
 
         # Invoke vim to edit item list
-        cmd = ['vim', tf.name]
+        cmd = ['vim', tf.name, '+normal }j']
 
         if isfile(VD_VIMRC_PATH):
             cmd += ['+source ' + VD_VIMRC_PATH]
@@ -824,13 +837,14 @@ def step_vim_edit_inventory(base, inventory):
 
 
 def step_calculate_inventory_diff(base, new):
-    debug(magenta('==== inventory (base) ===='))
-    for oitem in base.content:
-        debug(oitem)
-    debug('-------------------------')
-    for nitem in new.content:
-        debug(nitem)
-    debug(magenta('==== inventory (new) ===='))
+    if False:
+        debug(magenta('==== inventory (base) ===='))
+        for oitem in base.content:
+            debug(oitem)
+        debug('-------------------------')
+        for nitem in new.content:
+            debug(nitem)
+        debug(magenta('==== inventory (new) ===='))
 
     # =========================================================================
     # Calculate inventory diff
@@ -963,7 +977,7 @@ def step_check_change_list(base, new, change_list_raw):
     # 1.2 Put paths of changes into tree
     # 2. Conflict operations and path checks
     # 2.1 Check if there are multiple operations targets a single path
-    # 2.2 or change targets on a path that have children
+    # 2.2 Or changes target on paths that have children
     # -------------------------------------------------------------------------
 
     # 1. Put path(s) of changes into tree
@@ -996,7 +1010,8 @@ def step_check_change_list(base, new, change_list_raw):
             tree.add(change.src, 'rename/from', change)
             tree.add(change.dst, 'rename/to', change)
 
-    tree.print(debug)
+    if False:
+        tree.print(debug)
 
     # 2. Conflict operations and path checks
     # 2. A risky policy is used: only explicit errors are forbidden
