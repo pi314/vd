@@ -1065,7 +1065,12 @@ def step_check_change_list(base, new, change_list_raw):
         if set(node.tags.keys()) in [{'track', 'untrack'}, {'track', 'delete'}]:
             ok_changes = set(c for c in ok_changes if isinstance(c, TrackOperation))
 
+        # Cancel out items in the middle of rename chain
         elif set(node.tags.keys()) == {'rename/to', 'rename/from'}:
+            pass
+
+        # Cancel out items in the middle of rename chain
+        elif set(node.tags.keys()) == {'delete', 'rename/to'}:
             pass
 
         # Multiple operations on same path are not allowed
