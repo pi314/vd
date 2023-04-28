@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 # Mandatory
-#TODO: delete+rename/to should be ok
 #TODO: rename/to existing file should be error
 #TODO: Refine simple diff
 #TODO: Refine error() API, centralize common handling
