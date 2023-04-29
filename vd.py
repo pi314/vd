@@ -488,7 +488,7 @@ class GlobbingOperation(VirtualSingleTargetOperation):
 class ResolveLinkOperation(VirtualSingleTargetOperation):
     def __init__(self, target):
         super().__init__(target)
-        self.expand_to = os.readlink(target)
+        self.resolve_to = os.readlink(target)
 
 
 class UntrackOperation(VirtualSingleTargetOperation):
@@ -1099,7 +1099,7 @@ def step_check_change_list(base, new, change_list_raw):
         ok_changes = node.changes.copy()
         error_group = []
 
-        # Cancel out track and untrack/delete, results in track
+        # Cancel out track+untrack and track+delete, override results to [track]
         if set(node.tags.keys()) in [{'track', 'untrack'}, {'track', 'delete'}]:
             ok_changes = set(c for c in ok_changes if isinstance(c, TrackOperation))
 
@@ -1109,6 +1109,10 @@ def step_check_change_list(base, new, change_list_raw):
 
         # Cancel out items in the middle of rename chain
         elif set(node.tags.keys()) == {'delete', 'rename/to'}:
+            pass
+
+        # Cancel out untrack + resolve/real
+        elif set(node.tags.keys()) == {'untrack', 'resolve/real'}:
             pass
 
         elif node.tags.keys() == {'rename/to'} and \
