@@ -48,7 +48,10 @@ from unicodedata import east_asian_width
 # Global option
 # -----------------------------------------------------------------------------
 
-opt_diff_style = None
+options = argparse.Namespace(
+        diff_style=None,
+        debug=False,
+        )
 
 VD_VIMRC_PATH = expanduser(join('~/.config', 'vd', 'vd.vimrc'))
 
@@ -441,16 +444,32 @@ class VirtualOperation:
         return id(self)
 
 
-class TrackOperation(VirtualOperation):
+class VirtualSingleTargetOperation:
     def __init__(self, target):
         self.target = target
 
     def __repr__(self):
-        return '<Track {}>'.format(self.target)
+        return '<{} [{}]>'.format(self.__class__.__name__, self.target)
 
 
-class ExpandOperation(VirtualOperation):
+class VirtualMultiTargetOperation:
+    def __init__(self, targets):
+        self.targets = targets
+
+    def __repr__(self):
+        return '<{} {}>'.format(
+                self.__class__.__name__,
+                ','.join('[' + t + ']' for t in self.targets))
+
+
+class TrackOperation(VirtualSingleTargetOperation):
+    pass
+
+
+class ExpandOperation(VirtualSingleTargetOperation):
     def __init__(self, target):
+        super().__init__(target)
+
         if target.endswith('*'):
             expansion_mark = '*'
         elif target.endswith('+'):
@@ -466,49 +485,34 @@ class ExpandOperation(VirtualOperation):
 
             self.expand_to.append(newpath)
 
-    def __repr__(self):
-        return '<Expand {}>'.format(self.target)
+
+class UntrackOperation(VirtualSingleTargetOperation):
+    pass
 
 
-class UntrackOperation(VirtualOperation):
-    def __init__(self, target):
-        self.target = target
-
-    def __repr__(self):
-        return '<Untrack {}>'.format(self.target)
+class DeleteOperation(VirtualSingleTargetOperation):
+    pass
 
 
-class DeleteOperation(VirtualOperation):
-    def __init__(self, target):
-        self.target = target
-
-    def __repr__(self):
-        return '<Delete {}>'.format(self.target)
-
-
-class RenameOperation(VirtualOperation):
+class RenameOperation(VirtualMultiTargetOperation):
     def __init__(self, src, dst):
-        self.src = src
-        self.dst = dst
+        super().__init__((src, dst))
 
-    def __repr__(self):
-        return '<Rename {}>'.format(', '.join((self.src, self.dst)))
+    @property
+    def src(self):
+        return self.targets[0]
 
-
-class DominoRenameOperation(VirtualOperation):
-    def __init__(self, targets):
-        self.targets = targets
-
-    def __repr__(self):
-        return '<Domino {}>'.format(', '.join(self.targets))
+    @property
+    def dst(self):
+        return self.targets[1]
 
 
-class RotateRenameOperation(VirtualOperation):
-    def __init__(self, targets):
-        self.targets = targets
+class DominoRenameOperation(VirtualMultiTargetOperation):
+    pass
 
-    def __repr__(self):
-        return '<Rotate {}>'.format(', '.join(self.targets))
+
+class RotateRenameOperation(VirtualMultiTargetOperation):
+    pass
 
 
 class ReferencedPathTree:
@@ -641,7 +645,7 @@ def pretty_diff_strings(a, b):
     tag_counter.update(s[0] for s in diff_segments)
     tag_count = types.SimpleNamespace(**tag_counter)
 
-    diff_style = opt_diff_style
+    diff_style = options.diff_style
 
     if diff_style is None:
         if tag_count.replace == 1 and tag_count.delete + tag_count.insert == 0:
@@ -871,7 +875,7 @@ def step_vim_edit_inventory(base, inventory):
 
 
 def step_calculate_inventory_diff(base, new):
-    if False:
+    if options.debug:
         debug(magenta('==== inventory (base) ===='))
         for oitem in base.content:
             debug(oitem)
@@ -1064,7 +1068,7 @@ def step_check_change_list(base, new, change_list_raw):
             tree.add(change.src, 'rename/from', change)
             tree.add(change.dst, 'rename/to', change)
 
-    if True:
+    if options.debug:
         tree.print(debug)
 
     # 2. Conflict operations and path checks
@@ -1379,8 +1383,6 @@ nnoremap S ^WC
 # =============================================================================
 
 def main():
-    global opt_diff_style
-
     parser = argparse.ArgumentParser(
         prog='vd',
         description='\n'.join((
@@ -1401,27 +1403,36 @@ def main():
             default=False,
             help='Include hidden paths')
 
-    parser.add_argument('-d', '--diff-style', choices=DiffStyle,
-            type=lambda x: DiffStyle[x],
+    parser.add_argument('-s', '--diff-style',
+            choices=DiffStyle.__members__.keys(),
             help='Specify diff style')
 
     parser.add_argument('--vimrc', action='store_true',
             default=False,
             help='Edit or create the vimrc for vd')
 
+    parser.add_argument('--debug', action='store_true',
+            default=False,
+            help='Print debug messages')
+
     parser.add_argument('targets', nargs='*',
             help='Paths to edit, directories are expanded')
 
-    options = parser.parse_args()
+    args = parser.parse_args()
 
     if not sys.stdout.isatty() or not sys.stderr.isatty():
         error('Both stdout and stderr must be tty')
         exit(1)
 
-    if options.vimrc:
+    if args.vimrc:
         exit(open_vd_vimrc())
 
-    opt_diff_style = options.diff_style
+    options.debug = args.debug
+    if args.diff_style:
+        options.diff_style = DiffStyle[args.diff_style]
+
+    if options.debug:
+        print(options)
 
     # =========================================================================
     # Collect initial targets
@@ -1433,7 +1444,7 @@ def main():
 
     targets = []
 
-    for target in sorted_as_filename(options.targets):
+    for target in sorted_as_filename(args.targets):
         targets.append((target, True))
 
     if not sys.stdin.isatty():
@@ -1444,7 +1455,7 @@ def main():
         targets.append(('.', True))
 
     inventory = Inventory()
-    inventory.ignore_hidden = not options.all
+    inventory.ignore_hidden = not args.all
     inventory.ignore_duplicated_path = True
 
     for t, e in targets:
