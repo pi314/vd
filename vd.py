@@ -466,21 +466,21 @@ class TrackOperation(VirtualSingleTargetOperation):
     pass
 
 
-class ExpandOperation(VirtualSingleTargetOperation):
+class GlobbingOperation(VirtualSingleTargetOperation):
     def __init__(self, target):
         super().__init__(target)
 
         if target.endswith('*'):
-            expansion_mark = '*'
+            wildcard = '*'
         elif target.endswith('+'):
-            expansion_mark = '+'
+            wildcard = '+'
 
-        self.target = target.rstrip(expansion_mark)
+        self.target = target.rstrip(wildcard)
 
         self.expand_to = []
         for f in sorted_as_filename(os.listdir(self.target)):
             newpath = join(self.target, f)
-            if expansion_mark == '+' and f.startswith('.'):
+            if wildcard == '+' and f.startswith('.'):
                 continue
 
             self.expand_to.append(newpath)
@@ -726,7 +726,7 @@ def aggregate_changes(change_list_raw):
         elif isinstance(change, TrackOperation):
             change_list_track.append(change)
 
-        elif isinstance(change, ExpandOperation):
+        elif isinstance(change, GlobbingOperation):
             change_list_track.append(change)
 
         elif isinstance(change, DeleteOperation):
@@ -993,7 +993,7 @@ def step_calculate_inventory_diff(base, new):
             elif npath == join(opath, '*') or npath == join(opath, '+'):
                 # Expand
                 if isdir(opath):
-                    change_list_raw.append(ExpandOperation(npath))
+                    change_list_raw.append(GlobbingOperation(npath))
                 else:
                     errorq(nitem.piti + '  ' +
                             red(nitem.path + ' ◄─ Cannot expand file'))
@@ -1057,7 +1057,7 @@ def step_check_change_list(base, new, change_list_raw):
         elif isinstance(change, TrackOperation):
             tree.add(change.target, 'track', change)
 
-        elif isinstance(change, ExpandOperation):
+        elif isinstance(change, GlobbingOperation):
             for f in change.expand_to:
                 tree.add(f, 'track', change)
 
@@ -1160,8 +1160,8 @@ def step_confirm_change_list(base, new, change_list_raw):
         elif isinstance(change, TrackOperation):
                 print_path_with_prompt(info, cyan, 'Track:', change.target)
 
-        elif isinstance(change, ExpandOperation):
-            print_path_with_prompt(info, cyan, 'Expand:', change.target)
+        elif isinstance(change, GlobbingOperation):
+            print_path_with_prompt(info, cyan, 'Globbing:', change.target)
 
         elif isinstance(change, DeleteOperation):
             print_path_with_prompt(info, red, 'Delete:', change.target)
@@ -1198,7 +1198,7 @@ def step_confirm_change_list(base, new, change_list_raw):
             warning(f'Unknown change: {change}')
 
     # If all changes are 'track' and 'untrack', apply the change directly
-    if (not change_list) or all({type(c) in {TrackOperation, UntrackOperation, ExpandOperation} for c in change_list}):
+    if (not change_list) or all({type(c) in {TrackOperation, UntrackOperation, GlobbingOperation} for c in change_list}):
         return (step_expand_inventory, new)
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
@@ -1227,8 +1227,8 @@ def step_apply_change_list(base, new, change_list):
         elif isinstance(change, TrackOperation):
             print_path_with_prompt(info, cyan, 'Track:', change.target)
 
-        elif isinstance(change, ExpandOperation):
-            print_path_with_prompt(info, cyan, 'Expand:', change.target)
+        elif isinstance(change, GlobbingOperation):
+            print_path_with_prompt(info, cyan, 'Globbing:', change.target)
 
         elif isinstance(change, DeleteOperation):
             cmd_list.append(('rm', change.target))
@@ -1311,7 +1311,7 @@ def step_apply_change_list(base, new, change_list):
     for d in rmdirset:
         clean_up_empty_dir(d)
 
-    if any({type(c) in (TrackOperation, UntrackOperation, ExpandOperation) for c in change_list}):
+    if any({type(c) in (TrackOperation, UntrackOperation, GlobbingOperation) for c in change_list}):
         return (step_expand_inventory, new)
 
     return (exit, 0)
@@ -1322,7 +1322,7 @@ def step_expand_inventory(new):
     for item in new:
         if not item.is_untrack:
             if item.path.endswith(('*', '+')):
-                operation = ExpandOperation(item.path)
+                operation = GlobbingOperation(item.path)
 
                 for f in operation.expand_to:
                     newnew.append(f)
