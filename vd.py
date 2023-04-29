@@ -2,7 +2,6 @@
 
 # Mandatory
 #TODO: Refine simple diff
-#TODO: Expand symlink with '@'
 #TODO: -r/--recursive, with depth limit?
 
 # Vim related
@@ -40,7 +39,7 @@ import types
 
 from enum import Enum
 from math import ceil, log10
-from os.path import split, dirname, basename, join, exists, isdir, islink, isfile, abspath, realpath, expanduser, expandvars
+from os.path import split, dirname, basename, join, exists, isdir, islink, isfile, abspath, realpath, expanduser
 from unicodedata import east_asian_width
 
 
@@ -486,6 +485,12 @@ class GlobbingOperation(VirtualSingleTargetOperation):
             self.expand_to.append(newpath)
 
 
+class ResolveLinkOperation(VirtualSingleTargetOperation):
+    def __init__(self, target):
+        super().__init__(target)
+        self.expand_to = os.readlink(target)
+
+
 class UntrackOperation(VirtualSingleTargetOperation):
     pass
 
@@ -525,7 +530,7 @@ class ReferencedPathTree:
     def _add(self, node_list, userpath, tag, change):
         if not node_list:
             if None in self.tags:
-                if tag in ('rename/from', 'delete', 'untrack'):
+                if tag in ('rename/from', 'delete', 'untrack', 'resolve/link'):
                     del self.tags[None]
 
             if tag not in self.tags:
@@ -729,6 +734,9 @@ def aggregate_changes(change_list_raw):
         elif isinstance(change, GlobbingOperation):
             change_list_track.append(change)
 
+        elif isinstance(change, ResolveLinkOperation):
+            change_list_track.append(change)
+
         elif isinstance(change, DeleteOperation):
             change_list_delete.append(change)
 
@@ -799,6 +807,7 @@ hint_text = '''
 # - Sort it as you want.
 # - path/to/directory/+ to expand non-hidden items
 # - path/to/directory/* to expand all items
+# - path/to/link@ to resolve the soft link
 '''.strip()
 
 def hint_text_vimrc():
@@ -998,6 +1007,13 @@ def step_calculate_inventory_diff(base, new):
                     errorq(nitem.piti + '  ' +
                             red(nitem.path + ' ◄─ Cannot expand file'))
 
+            elif npath == (opath + '@'):
+                if islink(opath):
+                    change_list_raw.append(ResolveLinkOperation(opath))
+                else:
+                    errorq(nitem.piti + '  ' +
+                            red(nitem.path + ' ◄─ Can only resolve link'))
+
             elif realpath(opath) != realpath(npath):
                 # Rename
                 change_list_raw.append(RenameOperation(opath, npath))
@@ -1060,6 +1076,10 @@ def step_check_change_list(base, new, change_list_raw):
         elif isinstance(change, GlobbingOperation):
             for f in change.expand_to:
                 tree.add(f, 'track', change)
+
+        elif isinstance(change, ResolveLinkOperation):
+            tree.add(change.target, 'resolve/link', change)
+            tree.add(change.resolve_to, 'resolve/real', change)
 
         elif isinstance(change, DeleteOperation):
             tree.add(change.target, 'delete', change)
@@ -1161,7 +1181,10 @@ def step_confirm_change_list(base, new, change_list_raw):
                 print_path_with_prompt(info, cyan, 'Track:', change.target)
 
         elif isinstance(change, GlobbingOperation):
-            print_path_with_prompt(info, cyan, 'Globbing:', change.target)
+            print_path_with_prompt(info, cyan, 'Expand:', change.target)
+
+        elif isinstance(change, ResolveLinkOperation):
+            print_path_with_prompt(info, cyan, 'Resolve:', change.target)
 
         elif isinstance(change, DeleteOperation):
             print_path_with_prompt(info, red, 'Delete:', change.target)
@@ -1198,7 +1221,7 @@ def step_confirm_change_list(base, new, change_list_raw):
             warning(f'Unknown change: {change}')
 
     # If all changes are 'track' and 'untrack', apply the change directly
-    if (not change_list) or all({type(c) in {TrackOperation, UntrackOperation, GlobbingOperation} for c in change_list}):
+    if (not change_list) or all({type(c) in {TrackOperation, UntrackOperation, GlobbingOperation, ResolveLinkOperation} for c in change_list}):
         return (step_expand_inventory, new)
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
@@ -1228,7 +1251,10 @@ def step_apply_change_list(base, new, change_list):
             print_path_with_prompt(info, cyan, 'Track:', change.target)
 
         elif isinstance(change, GlobbingOperation):
-            print_path_with_prompt(info, cyan, 'Globbing:', change.target)
+            print_path_with_prompt(info, cyan, 'Expanding:', change.target)
+
+        elif isinstance(change, ResolveLinkOperation):
+            print_path_with_prompt(info, cyan, 'Resolving:', change.target)
 
         elif isinstance(change, DeleteOperation):
             cmd_list.append(('rm', change.target))
@@ -1326,6 +1352,10 @@ def step_expand_inventory(new):
 
                 for f in operation.expand_to:
                     newnew.append(f)
+
+            elif item.path.endswith('@'):
+                newnew.append(os.readlink(item.path.rstrip('@')))
+
             else:
                 newnew.append(item.path)
     newnew.build_index()
