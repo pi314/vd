@@ -75,29 +75,32 @@ class RegexCache:
         return self.m.groups(*args, **kwargs)
 
 
-def color_to(color_code):
-    def colorer(s):
-        if not s:
-            return ''
-        return f'\033[{color_code}m{s}\033[m'
-    return colorer
+class paint:
+    def __init__(self, color_code):
+        self.escape_seq = f'\033[{color_code}m'
 
-black = color_to('38;2;22;22;29') # eigengrau, or brain gray
-red = color_to(31)
-green = color_to(32)
-yellow = color_to(33)
-blue = color_to(34)
-magenta = color_to(35)
-cyan = color_to(36)
-white = color_to(37)
-red_bg = color_to('41')
-green_bg = color_to('42')
-yellow_bg = color_to('43')
-blue_bg = color_to('44')
-magenta_bg = color_to('45')
-cyan_bg = color_to('46')
-white_bg = color_to('47')
-nocolor = lambda s: '\033[m' + s
+    def __call__(self, s):
+        return f'{self.escape_seq}{s}\033[m'
+
+    def __str__(self):
+        return self.escape_seq
+
+black = paint('38;2;22;22;29') # eigengrau, or brain gray
+red = paint(31)
+green = paint(32)
+yellow = paint(33)
+blue = paint(34)
+magenta = paint(35)
+cyan = paint(36)
+white = paint(37)
+red_bg = paint('41')
+green_bg = paint('42')
+yellow_bg = paint('43')
+blue_bg = paint('44')
+magenta_bg = paint('45')
+cyan_bg = paint('46')
+white_bg = paint('47')
+nocolor = paint('')
 
 RLB = red('[')
 RRB = red(']')
@@ -186,6 +189,11 @@ def parent_dir(path):
 
 
 def inode(path):
+    # It's IMPORTANT to remove the trailing slash before calling lstat().
+    # Because the trailing slash causes the last component to be resolved
+    # unconditionally.
+
+    path = path.rstrip('/')
     if exists(path):
         return os.stat(path, follow_symlinks=False).st_ino
 
@@ -524,19 +532,44 @@ class ReferencedPathTree:
     def __init__(self, node_name):
         self.name = node_name or '/'
         self.children = dict()
-        self.tags = dict()
         self.changes = set()
 
-    def _add(self, node_list, userpath, tag, change):
+        self.inv_inward_flows = []
+        self.inv_outward_flows = []
+        self.fs_inward_flows = []
+        self.fs_outward_flows = []
+
+    @property
+    def flows(self):
+        return (
+                self.inv_inward_flows +
+                self.inv_outward_flows +
+                self.fs_inward_flows +
+                self.fs_outward_flows
+                )
+
+    @property
+    def flow_type_list(self):
+        return [flow for flow,_,_ in self.flows]
+
+    def _add(self, node_list, referpath, flow, change):
         if not node_list:
-            if None in self.tags:
-                if tag in ('rename/from', 'delete', 'untrack', 'resolve/link'):
-                    del self.tags[None]
+            if self.flow_type_list == ['(tracking)']:
+                self.inv_inward_flows = []
 
-            if tag not in self.tags:
-                self.tags[tag] = []
+            if flow in {'(tracking)', 'track', 'resolve/real'}:
+                self.inv_inward_flows.append((flow, referpath, change))
 
-            self.tags[tag].append(userpath)
+            if flow in {'untrack'}:
+                self.inv_outward_flows.append((flow, referpath, change))
+
+            if flow in {'rename', 'rename/to'}:
+                self.inv_inward_flows.append((flow, referpath, change))
+                self.fs_inward_flows.append((flow, referpath, change))
+
+            if flow in {'rename', 'delete', 'rename/from'}:
+                self.inv_outward_flows.append((flow, referpath, change))
+                self.fs_outward_flows.append((flow, referpath, change))
 
             if change:
                 self.changes.add(change)
@@ -547,14 +580,14 @@ class ReferencedPathTree:
             self.children[node_list[0]] = ReferencedPathTree(node_list[0])
 
         self.children[node_list[0]]._add(node_list[1:],
-                userpath, tag, change)
+                referpath, flow, change)
 
-    def add(self, userpath, tag, change):
-        if not userpath or not isinstance(userpath, str):
+    def add(self, referpath, flow, change):
+        if not referpath or not isinstance(referpath, str):
             return
 
-        self._add(splitpath(xxxxpath(userpath).lstrip('/')),
-                userpath, tag, change)
+        self._add(splitpath(xxxxpath(referpath).lstrip('/')),
+                referpath, flow, change)
 
     def _get(self, node_list):
         if not node_list:
@@ -580,13 +613,13 @@ class ReferencedPathTree:
                 yield n
 
     def __repr__(self):
-        return '<ReferencedPathTree {}>'.format(self.name)
+        return f'<ReferencedPathTree {self.name}>'
 
     def to_lines(self):
         ret = []
         ret.append(self.name + ' (' + ','.join(
-            (tag or 'tracking')
-            for tag in self.tags) + ')')
+            (flow or 'tracking')
+            for flow, _, _ in self.flows) + ')')
 
         children = sorted_as_filename(self.children)
         for idx, child in enumerate(children):
@@ -1014,7 +1047,7 @@ def step_calculate_inventory_diff(base, new):
                     errorq(nitem.piti + '  ' +
                             red(nitem.path + ' ◄─ Can only resolve link'))
 
-            elif realpath(opath) != realpath(npath):
+            elif xxxxpath(opath) != xxxxpath(npath):
                 # Rename
                 change_list_raw.append(RenameOperation(opath, npath))
 
@@ -1062,8 +1095,8 @@ def step_check_change_list(base, new, change_list_raw):
         if oitem.is_untrack:
             continue
 
-        if not oitem.path.endswith(('*', '+')):
-            tree.add(oitem.path, None, None)
+        if not oitem.path.endswith(('/*', '/+')):
+            tree.add(oitem.path, '(tracking)', None)
 
     # 1.2 Put paths of changes into tree
     for change in change_list_raw:
@@ -1078,15 +1111,22 @@ def step_check_change_list(base, new, change_list_raw):
                 tree.add(f, 'track', change)
 
         elif isinstance(change, ResolveLinkOperation):
-            tree.add(change.target, 'resolve/link', change)
+            tree.add(change.target, 'untrack', change)
             tree.add(change.resolve_to, 'resolve/real', change)
 
         elif isinstance(change, DeleteOperation):
             tree.add(change.target, 'delete', change)
 
         elif isinstance(change, RenameOperation):
-            tree.add(change.src, 'rename/from', change)
-            tree.add(change.dst, 'rename/to', change)
+            if inode(change.src) == inode(change.dst):
+                # If both inode are the same, try to make it non-conflict.
+                # One possibility is the file system treats different
+                # unicode normal form as the same file
+                tree.add(change.src, 'rename', change)
+                tree.add(change.dst, 'rename', change)
+            else:
+                tree.add(change.src, 'rename/from', change)
+                tree.add(change.dst, 'rename/to', change)
 
     if options.debug:
         tree.print(debug)
@@ -1096,72 +1136,77 @@ def step_check_change_list(base, new, change_list_raw):
     change_list_filtered = set()
     error_groups = []
     for node in tree.walk():
-        ok_changes = node.changes.copy()
-        error_group = []
+        error_group = set()
 
-        # Cancel out track+untrack and track+delete, override results to [track]
-        if set(node.tags.keys()) in [{'track', 'untrack'}, {'track', 'delete'}]:
-            ok_changes = set(c for c in ok_changes if isinstance(c, TrackOperation))
+        # Special case: Override track + delete with a single track
+        if node.flow_type_list == ['track', 'delete', 'delete']:
+            node.inv_inward_flows = [node.inv_inward_flows[0]]
+            node.inv_outward_flows = []
+            node.fs_outward_flows = []
 
-        # Cancel out items in the middle of rename chain
-        elif set(node.tags.keys()) == {'rename/to', 'rename/from'}:
-            pass
+        # Forbid multiple operations on a same path
+        if any(len(flows) > 1 for flows in (
+            node.inv_inward_flows,
+            node.inv_outward_flows,
+            node.fs_inward_flows,
+            node.fs_outward_flows
+            )):
+            error_group |= set(node.flows)
 
-        # Cancel out items in the middle of rename chain
-        elif set(node.tags.keys()) == {'delete', 'rename/to'}:
-            pass
+        if not error_group:
+            # Count net flow of the node
+            fs_net_flow_count = len(node.fs_inward_flows) - len(node.fs_outward_flows)
 
-        # Cancel out untrack + resolve/real
-        elif set(node.tags.keys()) == {'untrack', 'resolve/real'}:
-            pass
+            # Forbid overriding existing path
+            if fs_net_flow_count > 0 and exists(node.fs_inward_flows[0][1]):
+                error_group.add(('(existing)', node.fs_inward_flows[0][1], None))
+                error_group |= set(node.fs_inward_flows)
 
-        elif node.tags.keys() == {'rename/to'} and \
-                any(exists(refer) for refer in node.tags['rename/to']):
-            for refer in node.tags['rename/to']:
-                error_group.append(('rename/to', refer))
+        if not error_group:
+            # Forbid modifying/deleting targets that has children
+            if len(node.fs_outward_flows) and node.children:
+                error_group |= set(node.fs_outward_flows)
 
-                if exists(refer):
-                    error_group.append(('(exists)', refer))
-
-        # Multiple operations on same path are not allowed
-        elif len(node.tags) > 1:
-            for tag, refers in node.tags.items():
-                for refer in refers:
-                    error_group.append((tag, refer))
-
-        elif len(node.tags.get('rename/to', [])) > 1:
-            for change in node.changes:
-                debug(error_group)
-                error_group.append(('rename/from', change.src))
-                error_group.append(('rename/to', change.dst))
-                debug(error_group)
-
-        # Check if the modify target has children
-        elif (set(node.tags.keys()) & {'delete', 'rename/from', 'rename/to'}
-                and node.children):
-            for tag, refers in node.tags.items():
-                for refer in refers:
-                    error_group.append((tag, refer))
-
-            for child_node in node.children.values():
-                for tag, refers in child_node.tags.items():
-                    for refer in refers:
-                        error_group.append((tag, refer))
+                for child_node in node.children.values():
+                    error_group |= set(child_node.flows)
 
         if error_group:
             error_groups.append(error_group)
         else:
-            change_list_filtered |= ok_changes
+            change_list_filtered |= set(
+                    change for _,_,change in node.flows
+                    if change is not None)
 
     for idx, error_group in enumerate(error_groups):
         if idx:
             errorq()
 
+        err_msg = []
+        for idx, (flow, refer, change) in enumerate(error_group):
+            if idx:
+                err_msg.append(('', None))
+
+            if change is None:
+                err_msg.append((flow, refer))
+
+            elif isinstance(change, GlobbingOperation):
+                err_msg.append(('track', refer))
+
+            elif isinstance(change, RenameOperation):
+                err_msg.append(('rename/from', change.src))
+                err_msg.append(('rename/to', change.dst))
+
+            elif isinstance(change, VirtualSingleTargetOperation):
+                err_msg.append((flow, refer))
+
         errorq('Conflicted operations:')
-        tag_column_width = max(len(tag or '(tracking)') for tag, path in error_group)
-        for tag, path in sorted(error_group,
-                key=lambda x: (x[0] is None, x[0], x[1])):
-            errorq(yellow((tag or '(tracking)').ljust(tag_column_width)) + ' ' + path)
+        tag_column_width = max(len(flow) for flow, _ in err_msg)
+        for idx, (flow, refer) in enumerate(err_msg):
+            if not flow:
+                errorq()
+                continue
+
+            errorq(f'  {yellow}{flow:<{tag_column_width}}{nocolor} {refer}')
 
     if error_groups:
         return (step_ask_fix_it, base, new)
@@ -1225,7 +1270,10 @@ def step_confirm_change_list(base, new, change_list_raw):
             warning(f'Unknown change: {change}')
 
     # If all changes are 'track' and 'untrack', apply the change directly
-    if (not change_list) or all({type(c) in {TrackOperation, UntrackOperation, GlobbingOperation, ResolveLinkOperation} for c in change_list}):
+    if (not change_list) or all({type(c) in {
+        TrackOperation, UntrackOperation,
+        GlobbingOperation, ResolveLinkOperation
+        } for c in change_list}):
         return (step_expand_inventory, new)
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
@@ -1368,6 +1416,9 @@ def step_expand_inventory(new):
         info('No targets to edit')
         return (exit, 0)
 
+    print()
+    print()
+
     return (step_vim_edit_inventory, newnew, newnew)
 
 # -----------------------------------------------------------------------------
@@ -1393,19 +1444,14 @@ def open_vd_vimrc():
 " Turn off line number for not interfere with item key
 set nonu
 
-" Just highlight some keyword for help reading
-set syntax=python
-
 " Set a wide gap between item key and path
 set tabstop=8
-
-" Move items up and down
-nnoremap K :move -2<CR>
-nnoremap J :move +1<CR>
 
 " Rename item
 nnoremap cc ^WC
 nnoremap S ^WC
+
+set listchars=tab:¦¦
 '''.lstrip())
 
     print(VD_VIMRC_PATH)
