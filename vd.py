@@ -36,11 +36,11 @@ import subprocess as sub
 import sys
 import tempfile
 import types
+import unicodedata
 
 from enum import Enum
 from math import ceil, log10
 from os.path import split, dirname, basename, join, exists, isdir, islink, isfile, abspath, realpath, expanduser
-from unicodedata import east_asian_width
 
 
 # =============================================================================
@@ -95,7 +95,7 @@ cyan = paint(36)
 white = paint(37)
 red_bg = paint('41')
 green_bg = paint('42')
-yellow_bg = paint('43')
+yellow_bg = paint('30;43')
 blue_bg = paint('44')
 magenta_bg = paint('45')
 cyan_bg = paint('46')
@@ -158,7 +158,7 @@ def has_error():
 
 
 def str_width(s):
-    return sum(1 + (east_asian_width(c) in 'WF') for c in decolor(s))
+    return sum(1 + (unicodedata.east_asian_width(c) in 'WF') for c in decolor(s))
 
 
 def shrinkuser(path):
@@ -674,13 +674,71 @@ def screen_width():
 DiffStyle = Enum('DiffStyle', ['aligned', 'compact'])
 
 
-def pretty_diff_strings(a, b):
+def fancy_diff_strings(a, b):
     diff_segments = []
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
-        diff_segments.append((tag, a[i1:i2], b[j1:j2]))
+
+    diff_aligned_A = ''
+    diff_aligned_B = ''
+    diff_compact_A = ''
+    diff_compact_B = ''
+    diff_oneline = ''
 
     tag_counter = collections.Counter(equal=0, delete=0, insert=0, replace=0)
-    tag_counter.update(s[0] for s in diff_segments)
+
+    NFKC = lambda s: unicodedata.normalize('NFKC', s)
+
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        seg_a = a[i1:i2]
+        seg_b = b[j1:j2]
+
+        tag_counter[tag] += 1
+
+        if tag == 'equal':
+            diff_aligned_A += seg_a
+            diff_aligned_B += seg_b
+
+            diff_compact_A += seg_a
+            diff_compact_B += seg_b
+
+            if diff_oneline is not None:
+                diff_oneline += seg_a
+
+        elif tag == 'delete':
+            diff_aligned_A += red_bg(seg_a)
+            diff_aligned_B += ' ' * str_width(seg_a)
+
+            diff_compact_A += red_bg(seg_a)
+
+            if diff_oneline is not None:
+                diff_oneline += red_bg(seg_a)
+
+        elif tag == 'insert':
+            diff_aligned_A += ' ' * str_width(seg_b)
+            diff_aligned_B += green_bg(seg_b)
+
+            diff_compact_B += green_bg(seg_b)
+
+            if diff_oneline is not None:
+                diff_oneline += green_bg(seg_b)
+
+        elif tag == 'replace':
+            wa = str_width(seg_a)
+            wb = str_width(seg_b)
+            w = max(wa, wb)
+
+            diff_aligned_A += red_bg(seg_a) + (' ' * (w - wa))
+            diff_aligned_B += green_bg(seg_b) + (' ' * (w - wb))
+
+            diff_compact_A += red_bg(seg_a)
+            diff_compact_B += green_bg(seg_b)
+
+            if diff_oneline is None:
+                pass
+            elif NFKC(seg_a.strip()) == NFKC(seg_b.strip()):
+                diff_oneline += yellow_bg(seg_b)
+            else:
+                diff_oneline = None
+
     tag_count = types.SimpleNamespace(**tag_counter)
 
     diff_style = options.diff_style
@@ -707,39 +765,14 @@ def pretty_diff_strings(a, b):
                 # The screen is not wide enough
                 diff_style = DiffStyle.compact
 
-    A = ''
-    B = ''
-    for tag, sa, sb in diff_segments:
-        if tag == 'equal':
-            A += sa
-            B += sb
+    if options.diff_style is None and diff_oneline:
+        return (diff_oneline, None)
 
-        elif tag == 'delete':
-            if diff_style == DiffStyle.aligned:
-                A += red_bg(sa)
-                B += ' ' * str_width(sa)
-            else:
-                A += red_bg(sa)
+    elif diff_style == DiffStyle.aligned:
+        return (diff_aligned_A, diff_aligned_B)
 
-        elif tag == 'insert':
-            if diff_style == DiffStyle.aligned:
-                A += ' ' * str_width(sb)
-                B += green_bg(sb)
-            else:
-                B += green_bg(sb)
-
-        elif tag == 'replace':
-            if diff_style == DiffStyle.aligned:
-                wa = str_width(sa)
-                wb = str_width(sb)
-                w = max(wa, wb)
-                A += red_bg(sa) + (' ' * (w - wa))
-                B += green_bg(sb) + (' ' * (w - wb))
-            else:
-                A += red_bg(sa)
-                B += green_bg(sb)
-
-    return (A, B)
+    else:
+        return (diff_compact_A, diff_compact_B)
 
 
 def aggregate_changes(change_list_raw):
@@ -1245,13 +1278,14 @@ def step_confirm_change_list(base, new, change_list_raw):
         elif isinstance(change, DominoRenameOperation):
             if len(change.targets) == 2:
                 if change.targets[1] in deleted_item_list:
-                    A = change.targets[0]
-                    B = change.targets[1]
+                    A, B = change.targets
                 else:
-                    A, B = pretty_diff_strings(change.targets[0], change.targets[1])
+                    A, B = fancy_diff_strings(change.targets[0], change.targets[1])
 
                 print_path_with_prompt(info, yellow, 'Rename:', A)
-                print_path_with_prompt(info, yellow, '└─────►', B)
+
+                if B:
+                    print_path_with_prompt(info, yellow, '└─────►', B)
 
             else:
                 for idx, path in enumerate(change.targets):
