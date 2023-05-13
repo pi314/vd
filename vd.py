@@ -1222,12 +1222,16 @@ def step_confirm_change_list(base, new, change_list_raw):
 
     change_list = aggregate_changes(change_list_raw)
 
+    deleted_item_list = set(
+            change.target for change in change_list
+            if isinstance(change, DeleteOperation))
+
     for change in change_list:
         if isinstance(change, UntrackOperation):
             print_path_with_prompt(info, cyan, 'Untrack:', change.target)
 
         elif isinstance(change, TrackOperation):
-                print_path_with_prompt(info, cyan, 'Track:', change.target)
+            print_path_with_prompt(info, cyan, 'Track:', change.target)
 
         elif isinstance(change, GlobbingOperation):
             print_path_with_prompt(info, cyan, 'Expand:', change.target)
@@ -1240,7 +1244,12 @@ def step_confirm_change_list(base, new, change_list_raw):
 
         elif isinstance(change, DominoRenameOperation):
             if len(change.targets) == 2:
-                A, B = pretty_diff_strings(change.targets[0], change.targets[1])
+                if change.targets[1] in deleted_item_list:
+                    A = change.targets[0]
+                    B = change.targets[1]
+                else:
+                    A, B = pretty_diff_strings(change.targets[0], change.targets[1])
+
                 print_path_with_prompt(info, yellow, 'Rename:', A)
                 print_path_with_prompt(info, yellow, '└─────►', B)
 
