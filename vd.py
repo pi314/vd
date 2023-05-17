@@ -3,6 +3,7 @@
 # Mandatory
 #TODO: Refine simple diff
 #TODO: -r/--recursive, with depth limit?
+#TODO: Change the ./ prefix?
 
 # Vim related
 #TODO: Respect LS_COLORS by utilizing bits in PITI
