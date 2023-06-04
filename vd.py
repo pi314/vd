@@ -727,8 +727,8 @@ def fancy_diff_strings(a, b):
             wb = str_width(seg_b)
             w = max(wa, wb)
 
-            diff_aligned_A += red_bg(seg_a) + (' ' * (w - wa))
-            diff_aligned_B += green_bg(seg_b) + (' ' * (w - wb))
+            diff_aligned_A += (' ' * (w - wa)) + red_bg(seg_a)
+            diff_aligned_B += (' ' * (w - wb)) + green_bg(seg_b)
 
             diff_compact_A += red_bg(seg_a)
             diff_compact_B += green_bg(seg_b)
@@ -765,6 +765,9 @@ def fancy_diff_strings(a, b):
             if align_width + str_width('[Info] Rename:[]') > screen_width():
                 # The screen is not wide enough
                 diff_style = DiffStyle.compact
+
+    if options.debug:
+        debug(diff_style)
 
     if options.diff_style is None and diff_oneline:
         return (diff_oneline, None)
