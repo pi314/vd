@@ -926,6 +926,7 @@ def step_vim_edit_inventory(base, inventory):
             cmd += ['+set nonu']
 
         sub.call(cmd, stdin=open('/dev/tty'))
+        print()
 
         # Parse tempfile content
         new = Inventory()
