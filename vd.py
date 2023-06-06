@@ -744,7 +744,13 @@ def fancy_diff_strings(a, b):
 
     diff_style = options.diff_style
 
+    if options.debug:
+        debug(diff_style)
+
     if diff_style is None:
+        if diff_oneline:
+            return (diff_oneline, None)
+
         if tag_count.replace == 1 and tag_count.delete + tag_count.insert == 0:
             # Only one replace, the diff is simple
             diff_style = DiffStyle.compact
@@ -765,12 +771,6 @@ def fancy_diff_strings(a, b):
             if align_width + str_width('[Info] Rename:[]') > screen_width():
                 # The screen is not wide enough
                 diff_style = DiffStyle.compact
-
-    if options.debug:
-        debug(diff_style)
-
-    if options.diff_style is None and diff_oneline:
-        return (diff_oneline, None)
 
     elif diff_style == DiffStyle.aligned:
         return (diff_aligned_A, diff_aligned_B)
