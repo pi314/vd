@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+usr/bin/env python3
 
 # Mandatory
 #TODO: Refine simple diff
@@ -772,7 +772,7 @@ def fancy_diff_strings(a, b):
                 # The screen is not wide enough
                 diff_style = DiffStyle.compact
 
-    elif diff_style == DiffStyle.aligned:
+    if diff_style == DiffStyle.aligned:
         return (diff_aligned_A, diff_aligned_B)
 
     else:
