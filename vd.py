@@ -203,15 +203,20 @@ def splitpath(path):
     return path.split('/')
 
 
-def sorted_as_filename(ls):
-    def filename_key(name):
+def fsorted(iterable, key=None):
+    def filename_as_key(name):
         def int_or_not(x):
             if x and x[0] in '1234567890':
                 return int(x)
             return x
         return tuple(int_or_not(x) for x in re.split(r'(\d+)', name))
 
-    return sorted(ls, key=filename_key)
+    if key is None:
+        sort_key = filename_as_key
+    else:
+        sort_key = lambda x: filename_as_key(key(x))
+
+    return sorted(iterable, key=sort_key)
 
 
 class UserSelection:
@@ -422,7 +427,7 @@ class Inventory:
             self._append_path(path)
 
         elif isdir(path) and not islink(path):
-            ls = sorted_as_filename(os.listdir(path))
+            ls = fsorted(os.listdir(path))
             for i in ls:
                 self._append_path(join(path, i))
 
@@ -486,7 +491,7 @@ class GlobbingOperation(VirtualSingleTargetOperation):
         self.target = target.rstrip(wildcard)
 
         self.expand_to = []
-        for f in sorted_as_filename(os.listdir(self.target)):
+        for f in fsorted(os.listdir(self.target)):
             newpath = join(self.target, f)
             if wildcard == '+' and f.startswith('.'):
                 continue
@@ -622,7 +627,7 @@ class ReferencedPathTree:
             (flow or 'tracking')
             for flow, _, _ in self.flows) + ')')
 
-        children = sorted_as_filename(self.children)
+        children = fsorted(self.children)
         for idx, child in enumerate(children):
             if idx == len(children) - 1:
                 prefix = ['└─ ', '   ']
@@ -745,7 +750,7 @@ def fancy_diff_strings(a, b):
     diff_style = options.diff_style
 
     if options.debug:
-        debug(diff_style)
+        debug('diff_style', '=', diff_style)
 
     if diff_style is None:
         if diff_oneline:
@@ -851,7 +856,7 @@ def aggregate_changes(change_list_raw):
     return (change_list_untrack +
             change_list_track +
             change_list_delete +
-            sorted(change_list_rename, key=lambda x: x.targets[0]))
+            fsorted(change_list_rename, key=lambda x: x.targets[0]))
 
 # -----------------------------------------------------------------------------
 # Specialized Utilities
@@ -1572,7 +1577,7 @@ def main():
 
     targets = []
 
-    for target in sorted_as_filename(args.targets):
+    for target in fsorted(args.targets):
         targets.append((target, True))
 
     if not sys.stdin.isatty():
