@@ -25,6 +25,7 @@ import collections
 import datetime
 import difflib
 import functools
+import inspect
 import io
 import itertools
 import math
@@ -126,7 +127,8 @@ def print_msg(tag, print_func, *args, **kwargs):
 
 
 def debug(*args, **kwargs):
-    print_msg(magenta('[Debug]'), print_stderr, *args, **kwargs)
+    if options.debug:
+        print_msg(magenta('[Debug]'), print_stderr, *args, **kwargs)
 
 
 def info(*args, **kwargs):
@@ -309,6 +311,12 @@ def gen_tmp_file_name(path, postfix='.vdtmp.'):
             getpid=os.getpid(),
             )
     return tmp_file_name
+
+
+def FUNC_LINE():
+    cf = inspect.currentframe()
+    bf = cf.f_back
+    return '[{}:{}]'.format(bf.f_code.co_name, bf.f_lineno)
 
 # -----------------------------------------------------------------------------
 # Generalized Utilities
@@ -749,8 +757,7 @@ def fancy_diff_strings(a, b):
 
     diff_style = options.diff_style
 
-    if options.debug:
-        debug('diff_style', '=', diff_style)
+    debug('diff_style', '=', diff_style)
 
     if diff_style is None:
         if diff_oneline:
@@ -896,6 +903,8 @@ def hint_text_vimrc():
 
 
 def step_vim_edit_inventory(base, inventory):
+    debug(FUNC_LINE())
+
     if exists('exit'):
         return (exit, 1)
 
@@ -960,14 +969,15 @@ def step_vim_edit_inventory(base, inventory):
 
 
 def step_calculate_inventory_diff(base, new):
-    if options.debug:
-        debug(magenta('==== inventory (base) ===='))
-        for oitem in base.content:
-            debug(oitem)
-        debug('-------------------------')
-        for nitem in new.content:
-            debug(nitem)
-        debug(magenta('==== inventory (new) ===='))
+    debug(FUNC_LINE())
+
+    debug(magenta('==== inventory (base) ===='))
+    for oitem in base.content:
+        debug(oitem)
+    debug('-------------------------')
+    for nitem in new.content:
+        debug(nitem)
+    debug(magenta('==== inventory (new) ===='))
 
     # =========================================================================
     # Calculate inventory diff
@@ -1105,6 +1115,8 @@ def step_calculate_inventory_diff(base, new):
 
 
 def step_ask_fix_it(base, new):
+    debug(FUNC_LINE())
+
     errorflush()
 
     user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
@@ -1129,6 +1141,7 @@ def step_check_change_list(base, new, change_list_raw):
     # 2.1 Check if there are multiple operations targets a single path
     # 2.2 Or changes target on paths that have children
     # -------------------------------------------------------------------------
+    debug(FUNC_LINE())
 
     # 1. Put path(s) of changes into tree
     tree = ReferencedPathTree(None)
@@ -1171,8 +1184,7 @@ def step_check_change_list(base, new, change_list_raw):
                 tree.add(change.src, 'rename/from', change)
                 tree.add(change.dst, 'rename/to', change)
 
-    if options.debug:
-        tree.print(debug)
+    tree.print(debug)
 
     # 2. Conflict operations and path checks
     # 2. A risky policy is used: only explicit errors are forbidden
@@ -1258,6 +1270,8 @@ def step_check_change_list(base, new, change_list_raw):
 
 
 def step_confirm_change_list(base, new, change_list_raw):
+    debug(FUNC_LINE())
+
     # If base inventory and new inventory is exactly the same, exit
     if base == new:
         info('No change')
@@ -1347,6 +1361,8 @@ def step_confirm_change_list(base, new, change_list_raw):
 
 
 def step_apply_change_list(base, new, change_list):
+    debug(FUNC_LINE())
+
     cmd_list = []
     for change in change_list:
         if isinstance(change, UntrackOperation):
@@ -1449,6 +1465,8 @@ def step_apply_change_list(base, new, change_list):
 
 
 def step_expand_inventory(new):
+    debug(FUNC_LINE())
+
     newnew = Inventory()
     for item in new:
         if not item.is_untrack:
@@ -1564,8 +1582,7 @@ def main():
     if args.diff_style:
         options.diff_style = DiffStyle[args.diff_style]
 
-    if options.debug:
-        print(options)
+    debug(options)
 
     # =========================================================================
     # Collect initial targets
