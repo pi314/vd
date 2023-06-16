@@ -95,6 +95,7 @@ blue = paint(34)
 magenta = paint(35)
 cyan = paint(36)
 white = paint(37)
+
 red_bg = paint('41')
 green_bg = paint('42')
 yellow_bg = paint('30;43')
@@ -103,6 +104,9 @@ magenta_bg = paint('45')
 cyan_bg = paint('46')
 white_bg = paint('47')
 nocolor = paint('')
+
+orange = paint('38;2;160;90;0')
+orange_bg = paint('30;48;2;160;90;0')
 
 RLB = red('[')
 RRB = red(']')
@@ -1406,10 +1410,10 @@ def step_apply_change_list(base, new, change_list):
 
                 dot_ds_store = join(path, '.DS_Store')
                 if exists(dot_ds_store):
-                    print(red('$'), 'rm', magenta(dot_ds_store))
+                    print(red('$'), 'rm', orange(shlex.quote(dot_ds_store)))
                     os.remove(join(dot_ds_store))
 
-                print(red('$'), 'rmdir', magenta(path))
+                print(red('$'), 'rmdir', orange(shlex.quote(path)))
                 os.rmdir(path)
             except FileNotFoundError:
                 return
@@ -1423,21 +1427,22 @@ def step_apply_change_list(base, new, change_list):
     for cmd in cmd_list:
         if cmd[0] == 'rm':
             if not isdir(cmd[1]) or islink(cmd[1]):
-                print(red('$'), 'rm', magenta(shlex.quote(cmd[1])))
+                print(red('$'), 'rm', orange(shlex.quote(cmd[1])))
                 os.remove(cmd[1])
                 rmdirset.add(parent_dir(cmd[1]))
             else:
-                print(red('$'), 'rm', '-r', magenta(shlex.quote(cmd[1])))
+                print(red('$'), 'rm', '-r', orange(shlex.quote(cmd[1])))
                 shutil.rmtree(cmd[1])
                 rmdirset.add(parent_dir(cmd[1]))
 
         elif cmd[0] == 'mv':
             if not exists(parent_dir(cmd[2])):
-                print(yellow('$'), 'mkdir', '-p', magenta(parent_dir(cmd[2])))
+                print(yellow('$'), 'mkdir', '-p', orange(shlex.quote(parent_dir(cmd[2]))))
                 os.makedirs(parent_dir(cmd[2]), exist_ok=True)
+
             print(yellow('$'), 'mv',
-                    magenta(shlex.quote(cmd[1])),
-                    magenta(shlex.quote(cmd[2])))
+                    orange(shlex.quote(cmd[1])),
+                    orange(shlex.quote(cmd[2])))
 
             if islink(cmd[1]):
                 linkto = os.readlink(cmd[1])
