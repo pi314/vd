@@ -25,6 +25,7 @@ import collections
 import datetime
 import difflib
 import functools
+import inspect
 import io
 import itertools
 import math
@@ -94,6 +95,7 @@ blue = paint(34)
 magenta = paint(35)
 cyan = paint(36)
 white = paint(37)
+
 red_bg = paint('41')
 green_bg = paint('42')
 yellow_bg = paint('30;43')
@@ -102,6 +104,9 @@ magenta_bg = paint('45')
 cyan_bg = paint('46')
 white_bg = paint('47')
 nocolor = paint('')
+
+orange = paint('38;2;160;90;0')
+orange_bg = paint('30;48;2;160;90;0')
 
 RLB = red('[')
 RRB = red(']')
@@ -126,7 +131,8 @@ def print_msg(tag, print_func, *args, **kwargs):
 
 
 def debug(*args, **kwargs):
-    print_msg(magenta('[Debug]'), print_stderr, *args, **kwargs)
+    if options.debug:
+        print_msg(magenta('[Debug]'), print_stderr, *args, **kwargs)
 
 
 def info(*args, **kwargs):
@@ -203,15 +209,20 @@ def splitpath(path):
     return path.split('/')
 
 
-def sorted_as_filename(ls):
-    def filename_key(name):
+def fsorted(iterable, key=None):
+    def filename_as_key(name):
         def int_or_not(x):
             if x and x[0] in '1234567890':
                 return int(x)
             return x
         return tuple(int_or_not(x) for x in re.split(r'(\d+)', name))
 
-    return sorted(ls, key=filename_key)
+    if key is None:
+        sort_key = filename_as_key
+    else:
+        sort_key = lambda x: filename_as_key(key(x))
+
+    return sorted(iterable, key=sort_key)
 
 
 class UserSelection:
@@ -304,6 +315,12 @@ def gen_tmp_file_name(path, postfix='.vdtmp.'):
             getpid=os.getpid(),
             )
     return tmp_file_name
+
+
+def FUNC_LINE():
+    cf = inspect.currentframe()
+    bf = cf.f_back
+    return '[{}:{}]'.format(bf.f_code.co_name, bf.f_lineno)
 
 # -----------------------------------------------------------------------------
 # Generalized Utilities
@@ -422,7 +439,7 @@ class Inventory:
             self._append_path(path)
 
         elif isdir(path) and not islink(path):
-            ls = sorted_as_filename(os.listdir(path))
+            ls = fsorted(os.listdir(path))
             for i in ls:
                 self._append_path(join(path, i))
 
@@ -486,7 +503,7 @@ class GlobbingOperation(VirtualSingleTargetOperation):
         self.target = target.rstrip(wildcard)
 
         self.expand_to = []
-        for f in sorted_as_filename(os.listdir(self.target)):
+        for f in fsorted(os.listdir(self.target)):
             newpath = join(self.target, f)
             if wildcard == '+' and f.startswith('.'):
                 continue
@@ -622,7 +639,7 @@ class ReferencedPathTree:
             (flow or 'tracking')
             for flow, _, _ in self.flows) + ')')
 
-        children = sorted_as_filename(self.children)
+        children = fsorted(self.children)
         for idx, child in enumerate(children):
             if idx == len(children) - 1:
                 prefix = ['└─ ', '   ']
@@ -727,8 +744,8 @@ def fancy_diff_strings(a, b):
             wb = str_width(seg_b)
             w = max(wa, wb)
 
-            diff_aligned_A += red_bg(seg_a) + (' ' * (w - wa))
-            diff_aligned_B += green_bg(seg_b) + (' ' * (w - wb))
+            diff_aligned_A += (' ' * (w - wa)) + red_bg(seg_a)
+            diff_aligned_B += (' ' * (w - wb)) + green_bg(seg_b)
 
             diff_compact_A += red_bg(seg_a)
             diff_compact_B += green_bg(seg_b)
@@ -744,7 +761,12 @@ def fancy_diff_strings(a, b):
 
     diff_style = options.diff_style
 
+    debug('diff_style', '=', diff_style)
+
     if diff_style is None:
+        if diff_oneline:
+            return (diff_oneline, None)
+
         if tag_count.replace == 1 and tag_count.delete + tag_count.insert == 0:
             # Only one replace, the diff is simple
             diff_style = DiffStyle.compact
@@ -766,10 +788,7 @@ def fancy_diff_strings(a, b):
                 # The screen is not wide enough
                 diff_style = DiffStyle.compact
 
-    if options.diff_style is None and diff_oneline:
-        return (diff_oneline, None)
-
-    elif diff_style == DiffStyle.aligned:
+    if diff_style == DiffStyle.aligned:
         return (diff_aligned_A, diff_aligned_B)
 
     else:
@@ -848,7 +867,7 @@ def aggregate_changes(change_list_raw):
     return (change_list_untrack +
             change_list_track +
             change_list_delete +
-            sorted(change_list_rename, key=lambda x: x.targets[0]))
+            fsorted(change_list_rename, key=lambda x: x.targets[0]))
 
 # -----------------------------------------------------------------------------
 # Specialized Utilities
@@ -888,6 +907,8 @@ def hint_text_vimrc():
 
 
 def step_vim_edit_inventory(base, inventory):
+    debug(FUNC_LINE())
+
     if exists('exit'):
         return (exit, 1)
 
@@ -923,6 +944,7 @@ def step_vim_edit_inventory(base, inventory):
             cmd += ['+set nonu']
 
         sub.call(cmd, stdin=open('/dev/tty'))
+        print()
 
         # Parse tempfile content
         new = Inventory()
@@ -951,14 +973,15 @@ def step_vim_edit_inventory(base, inventory):
 
 
 def step_calculate_inventory_diff(base, new):
-    if options.debug:
-        debug(magenta('==== inventory (base) ===='))
-        for oitem in base.content:
-            debug(oitem)
-        debug('-------------------------')
-        for nitem in new.content:
-            debug(nitem)
-        debug(magenta('==== inventory (new) ===='))
+    debug(FUNC_LINE())
+
+    debug(magenta('==== inventory (base) ===='))
+    for oitem in base.content:
+        debug(oitem)
+    debug('-------------------------')
+    for nitem in new.content:
+        debug(nitem)
+    debug(magenta('==== inventory (new) ===='))
 
     # =========================================================================
     # Calculate inventory diff
@@ -1096,6 +1119,8 @@ def step_calculate_inventory_diff(base, new):
 
 
 def step_ask_fix_it(base, new):
+    debug(FUNC_LINE())
+
     errorflush()
 
     user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
@@ -1120,6 +1145,7 @@ def step_check_change_list(base, new, change_list_raw):
     # 2.1 Check if there are multiple operations targets a single path
     # 2.2 Or changes target on paths that have children
     # -------------------------------------------------------------------------
+    debug(FUNC_LINE())
 
     # 1. Put path(s) of changes into tree
     tree = ReferencedPathTree(None)
@@ -1162,8 +1188,7 @@ def step_check_change_list(base, new, change_list_raw):
                 tree.add(change.src, 'rename/from', change)
                 tree.add(change.dst, 'rename/to', change)
 
-    if options.debug:
-        tree.print(debug)
+    tree.print(debug)
 
     # 2. Conflict operations and path checks
     # 2. A risky policy is used: only explicit errors are forbidden
@@ -1249,6 +1274,8 @@ def step_check_change_list(base, new, change_list_raw):
 
 
 def step_confirm_change_list(base, new, change_list_raw):
+    debug(FUNC_LINE())
+
     # If base inventory and new inventory is exactly the same, exit
     if base == new:
         info('No change')
@@ -1338,6 +1365,8 @@ def step_confirm_change_list(base, new, change_list_raw):
 
 
 def step_apply_change_list(base, new, change_list):
+    debug(FUNC_LINE())
+
     cmd_list = []
     for change in change_list:
         if isinstance(change, UntrackOperation):
@@ -1381,10 +1410,10 @@ def step_apply_change_list(base, new, change_list):
 
                 dot_ds_store = join(path, '.DS_Store')
                 if exists(dot_ds_store):
-                    print(red('$'), 'rm', magenta(dot_ds_store))
+                    print(red('$'), 'rm', orange(shlex.quote(dot_ds_store)))
                     os.remove(join(dot_ds_store))
 
-                print(red('$'), 'rmdir', magenta(path))
+                print(red('$'), 'rmdir', orange(shlex.quote(path)))
                 os.rmdir(path)
             except FileNotFoundError:
                 return
@@ -1398,21 +1427,22 @@ def step_apply_change_list(base, new, change_list):
     for cmd in cmd_list:
         if cmd[0] == 'rm':
             if not isdir(cmd[1]) or islink(cmd[1]):
-                print(red('$'), 'rm', magenta(shlex.quote(cmd[1])))
+                print(red('$'), 'rm', orange(shlex.quote(cmd[1])))
                 os.remove(cmd[1])
                 rmdirset.add(parent_dir(cmd[1]))
             else:
-                print(red('$'), 'rm', '-r', magenta(shlex.quote(cmd[1])))
+                print(red('$'), 'rm', '-r', orange(shlex.quote(cmd[1])))
                 shutil.rmtree(cmd[1])
                 rmdirset.add(parent_dir(cmd[1]))
 
         elif cmd[0] == 'mv':
             if not exists(parent_dir(cmd[2])):
-                print(yellow('$'), 'mkdir', '-p', magenta(parent_dir(cmd[2])))
+                print(yellow('$'), 'mkdir', '-p', orange(shlex.quote(parent_dir(cmd[2]))))
                 os.makedirs(parent_dir(cmd[2]), exist_ok=True)
+
             print(yellow('$'), 'mv',
-                    magenta(shlex.quote(cmd[1])),
-                    magenta(shlex.quote(cmd[2])))
+                    orange(shlex.quote(cmd[1])),
+                    orange(shlex.quote(cmd[2])))
 
             if islink(cmd[1]):
                 linkto = os.readlink(cmd[1])
@@ -1440,6 +1470,8 @@ def step_apply_change_list(base, new, change_list):
 
 
 def step_expand_inventory(new):
+    debug(FUNC_LINE())
+
     newnew = Inventory()
     for item in new:
         if not item.is_untrack:
@@ -1555,8 +1587,7 @@ def main():
     if args.diff_style:
         options.diff_style = DiffStyle[args.diff_style]
 
-    if options.debug:
-        print(options)
+    debug(options)
 
     # =========================================================================
     # Collect initial targets
@@ -1568,7 +1599,7 @@ def main():
 
     targets = []
 
-    for target in sorted_as_filename(args.targets):
+    for target in fsorted(args.targets):
         targets.append((target, True))
 
     if not sys.stdin.isatty():
