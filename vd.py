@@ -2,11 +2,20 @@
 
 # Mandatory
 #TODO: Refine simple diff
-#TODO: -r/--recursive, with depth limit?
+
 #TODO: Change the ./ prefix?
+#====> Maybe depend on whether target startswith ./
+
+#TODO: Append folder/* directly instead of append folder/ and then expand it
+#====> Just allow glob?
+
+#TODO: -r/--recursive, with depth limit?
+#====> dir/.../dir/file as "wildcard" pattern?
 
 # Vim related
+#TODO: Polyglot this file as the default vimrc
 #TODO: Respect LS_COLORS by utilizing bits in PITI
+#TODO: Put "widgets" on the top area, move cursor onto them and press to activate
 
 # Enhancement
 #TODO: If user change dir trailing slash to .tar, tar it
@@ -668,11 +677,7 @@ def normalize_path(path):
     if not path:
         return ''
 
-    npath = ''
-    if not path.startswith(('/', './', '../', '~/')) and path not in ('.', '..', '~'):
-        npath = './'
-
-    npath += path.rstrip('/')
+    npath = path.rstrip('/')
 
     if isdir(path) and not islink(path):
         npath += '/'
@@ -1426,34 +1431,37 @@ def step_apply_change_list(base, new, change_list):
 
     for cmd in cmd_list:
         if cmd[0] == 'rm':
-            if not isdir(cmd[1]) or islink(cmd[1]):
-                print(red('$'), 'rm', orange(shlex.quote(cmd[1])))
-                os.remove(cmd[1])
-                rmdirset.add(parent_dir(cmd[1]))
+            tgt = cmd[1]
+            if not isdir(tgt) or islink(tgt):
+                print(red('$'), 'rm', orange(shlex.quote(tgt)))
+                os.remove(tgt)
+                rmdirset.add(parent_dir(tgt))
             else:
-                print(red('$'), 'rm', '-r', orange(shlex.quote(cmd[1])))
-                shutil.rmtree(cmd[1])
-                rmdirset.add(parent_dir(cmd[1]))
+                print(red('$'), 'rm', '-r', orange(shlex.quote(tgt)))
+                shutil.rmtree(tgt)
+                rmdirset.add(parent_dir(tgt))
 
         elif cmd[0] == 'mv':
-            if not exists(parent_dir(cmd[2])):
-                print(yellow('$'), 'mkdir', '-p', orange(shlex.quote(parent_dir(cmd[2]))))
-                os.makedirs(parent_dir(cmd[2]), exist_ok=True)
+            src = cmd[1]
+            dst = cmd[2]
+            if parent_dir(dst) and not exists(parent_dir(dst)):
+                print(yellow('$'), 'mkdir', '-p', orange(shlex.quote(parent_dir(dst))))
+                os.makedirs(parent_dir(dst), exist_ok=True)
 
             print(yellow('$'), 'mv',
-                    orange(shlex.quote(cmd[1])),
-                    orange(shlex.quote(cmd[2])))
+                    orange(shlex.quote(src)),
+                    orange(shlex.quote(dst)))
 
-            if islink(cmd[1]):
-                linkto = os.readlink(cmd[1])
-                os.symlink(linkto, cmd[2])
-                os.remove(cmd[1])
+            if islink(src):
+                linkto = os.readlink(src)
+                os.symlink(linkto, dst)
+                os.remove(src)
 
             else:
-                shutil.move(cmd[1], cmd[2])
+                shutil.move(src, dst)
 
-            p1 = parent_dir(cmd[1])
-            p2 = parent_dir(cmd[2])
+            p1 = parent_dir(src)
+            p2 = parent_dir(dst)
             if p1 != p2:
                 rmdirset.add(p1)
 
