@@ -1,5 +1,41 @@
 #!/usr/bin/env python3
 
+""; hint_text = '''
+" =============================================================================
+" vd vimrc
+" =============================================================================
+
+" Turn off line number for not interfere with item key
+set nonu
+
+" Set a wide gap between item key and path
+set tabstop=8
+
+" Rename item
+nnoremap cc ^WC
+nnoremap S ^WC
+
+set listchars=tab:¦¦
+
+""'''.lstrip()
+
+""; '''
+exit
+""; '''
+print(hint_text.strip('""').strip())
+
+
+
+# Mandatary
+#TODO: Think in Path, define new Inventory interface
+
+#TODO: Rethink about folder and files
+
+# Vim related
+#TODO: Polyglot this file as the default vimrc
+#TODO: Respect LS_COLORS by utilizing bits in PITI
+
+
 __version__ = '0.0.0'
 
 
