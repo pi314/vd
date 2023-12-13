@@ -13,7 +13,7 @@ setup(
     py_modules=['vd'],
     keywords=['vidir'],
     entry_points = {
-        'console_scripts': ['vd=vd:main'],
+        'console_scripts': ['vd=vd:main', 'vd2=vd2:main'],
     },
     python_requires='>=3.6',
     classifiers=[
