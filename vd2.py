@@ -11,16 +11,16 @@ set nonu
 " Set a wide gap between item key and path
 set tabstop=8
 
+set listchars=tab:¦¦
+
 " Rename item
 nnoremap cc ^WC
 nnoremap S ^WC
 
-set listchars=tab:¦¦
-
 ""'''.lstrip()
 
 ""; '''
-exit
+finish
 ""; '''
 print(hint_text.strip('""').strip())
 
@@ -36,7 +36,7 @@ print(hint_text.strip('""').strip())
 #TODO: Respect LS_COLORS by utilizing bits in PITI
 
 
-__version__ = '0.0.0'
+__version__ = '0.0.1'
 
 
 # =============================================================================
@@ -44,14 +44,10 @@ __version__ = '0.0.0'
 # =============================================================================
 
 import argparse
-import collections
 import datetime
 import difflib
-import functools
 import inspect
 import io
-import itertools
-import math
 import os
 import re
 import readline
@@ -60,12 +56,9 @@ import shutil
 import subprocess as sub
 import sys
 import tempfile
-import types
 import unicodedata
 
 from enum import Enum
-from math import ceil, log10
-from os.path import split, dirname, basename, join, exists, isdir, islink, isfile, abspath, realpath, expanduser
 
 
 # =============================================================================
@@ -73,7 +66,6 @@ from os.path import split, dirname, basename, join, exists, isdir, islink, isfil
 # -----------------------------------------------------------------------------
 
 options = argparse.Namespace(
-        diff_style=None,
         debug=False,
         )
 
@@ -111,13 +103,13 @@ class paint:
         return self.escape_seq
 
 black = paint('38;2;22;22;29') # eigengrau, or brain gray
-red = paint(31)
-green = paint(32)
-yellow = paint(33)
-blue = paint(34)
-magenta = paint(35)
-cyan = paint(36)
-white = paint(37)
+red = paint('31')
+green = paint('32')
+yellow = paint('33')
+blue = paint('34')
+magenta = paint('35')
+cyan = paint('36')
+white = paint('37')
 
 red_bg = paint('41')
 green_bg = paint('42')
@@ -544,7 +536,7 @@ def main():
             help='Print debug messages')
 
     parser.add_argument('targets', nargs='*',
-            help='Paths to edit, directories are expanded')
+            help='Paths to edit. Directories are expanded')
 
     args = parser.parse_args()
 
