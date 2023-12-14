@@ -33,7 +33,7 @@ print(hint_text.strip('""').strip())
 
 # Vim related
 #TODO: Polyglot this file as the default vimrc
-#TODO: Respect LS_COLORS by utilizing bits in PITI
+#TODO: Respect LS_COLORS by utilizing bits in III
 
 
 __version__ = '0.0.1'
@@ -58,7 +58,7 @@ import sys
 import tempfile
 import unicodedata
 
-from enum import Enum
+from pathlib import Path
 
 
 # =============================================================================
@@ -346,10 +346,10 @@ def FUNC_LINE():
 # Containers
 # -----------------------------------------------------------------------------
 
-class InvalidPitiError(Exception):
+class InvalidIiiError(Exception):
     pass
 
-class DuplicatedPitiError(Exception):
+class DuplicatedIiiError(Exception):
     pass
 
 class ConflictedPathError(Exception):
@@ -363,7 +363,34 @@ class WTF(Exception):
 
 
 class InventoryItem:
-    def __init__(self, is_untrack, piti, path):
+    def __init__(self, iii, path, is_untrack=False):
+        # III = Inventory Item Identifier
+        self.iii = iii
+        self.path = Path(path)
+        self.is_untrack = is_untrack
+
+    @property
+    def display_text(self):
+        ...
+
+    @property
+    def realpath(self):
+        ...
+
+    @property
+    def exists(self):
+        ...
+
+    @property
+    def is_dir(self):
+        ...
+
+    @property
+    def is_file(self):
+        ...
+
+    @property
+    def is_link(self):
         ...
 
 
