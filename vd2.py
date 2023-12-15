@@ -5,7 +5,7 @@
 " vd vimrc
 " =============================================================================
 
-" Turn off line number for not interfere with item key
+" Turn off line number for not interferring with iii
 set nonu
 
 " Set a wide gap between item key and path
@@ -22,8 +22,6 @@ nnoremap S ^WC
 ""; '''
 finish
 ""; '''
-print(hint_text.strip('""').strip())
-
 
 
 # Mandatary
@@ -49,6 +47,7 @@ import difflib
 import inspect
 import io
 import os
+import os.path
 import re
 import readline
 import shlex
@@ -69,7 +68,7 @@ options = argparse.Namespace(
         debug=False,
         )
 
-VD_VIMRC_PATH = expanduser(join('~/.config', 'vd', 'vd.vimrc'))
+VD_VIMRC_PATH = Path.home() / '.config' / 'vd' / 'vd.vimrc'
 
 
 # =============================================================================
@@ -189,39 +188,6 @@ def shrinkuser(path):
         return join('~', path[len(homepath):])
 
     return path
-
-
-def xxxxpath(path):
-    # It's basically realpath() except it treats the trailing symlink as file
-
-    # Empty path is specially treated, for avoiding realpath('') -> cwd
-    if not path:
-        return
-
-    path = path.rstrip('/')
-    if islink(path):
-        head, tail = split(path)
-        return join(realpath(head), tail)
-
-    return realpath(path)
-
-
-def parent_dir(path):
-    return dirname(path.rstrip('/'))
-
-
-def inode(path):
-    # It's IMPORTANT to remove the trailing slash before calling lstat().
-    # Because the trailing slash causes the last component to be resolved
-    # unconditionally.
-
-    path = path.rstrip('/')
-    if exists(path):
-        return os.stat(path, follow_symlinks=False).st_ino
-
-
-def splitpath(path):
-    return path.split('/')
 
 
 def fsorted(iterable, key=None):
@@ -366,32 +332,51 @@ class InventoryItem:
     def __init__(self, iii, path, is_untrack=False):
         # III = Inventory Item Identifier
         self.iii = iii
-        self.path = Path(path)
+        self.str = path
+        self.path = Path(self.str)
         self.is_untrack = is_untrack
 
     @property
-    def display_text(self):
-        ...
+    def display_path(self):
+        text = self.str.rstrip('/')
+
+        homepath = Path.home() + '/'
+
+        if self.isdir and not self.islink:
+            text += '/'
+
+        if text.startswith(homepath):
+            text = os.path.join('~', text[len(homepath):])
+
+        return text
+
+    @property
+    def inode(self):
+        if self.exists:
+            return self.path.stat(follow_symlinks=False).st_ino
 
     @property
     def realpath(self):
-        ...
+        if self.islink:
+            return str(self.path.parent.resolve() / self.path.name)
+
+        return str(self.path.resolve())
 
     @property
     def exists(self):
-        ...
+        return self.path.exists()
 
     @property
-    def is_dir(self):
-        ...
+    def isdir(self):
+        return self.path.is_dir()
 
     @property
-    def is_file(self):
-        ...
+    def isfile(self):
+        return self.path.is_file()
 
     @property
-    def is_link(self):
-        ...
+    def islink(self):
+        return self.path.is_symlink()
 
 
 class Inventory:
