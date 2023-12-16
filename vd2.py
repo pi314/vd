@@ -1,37 +1,63 @@
 #!/usr/bin/env python3
 
-""; hint_text = '''
+""; vimrc = r'''
 " =============================================================================
 " vd vimrc
 " =============================================================================
 
-" Turn off line number for not interferring with iii
+" Turn off line number for not interfere with item key
 set nonu
 
-" Set a wide gap between item key and path
-set tabstop=8
+set nowrap
 
-set listchars=tab:¦¦
+set listchars=tab:\\x20│\\x20
+
+" Just highlight some keyword for help reading
+set syntax=python
 
 " Rename item
 nnoremap cc ^WC
 nnoremap S ^WC
 
-""'''.lstrip()
+" Parse $LS_COLORS for basic highlighting
+for s:token in split($LS_COLORS, ':')
+    let s:m = matchlist(s:token, '\v^(\w+)\=([0-9;]+)$')
+    let [s:unused, s:glob, s:code; s:unused] = s:m
+    let s:cterm = ''
+    let s:ctermfg = ''
+    let s:ctermbg = ''
+    for s:code_token in split(s:code, ';')
+        if s:code_token == '1' || s:code_token == '01'
+            let s:cterm = 'cterm=bold'
+        elseif s:code_token[0] == '3'
+            let s:ctermfg = 'ctermfg='. s:code_token[1:]
+        elseif s:code_token[0] == '4'
+            let s:ctermbg = 'ctermbg='. s:code_token[1:]
+        endif
+    endfor
+    let s:hlgroup = 'vdHlGroup_'. s:glob
+    exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
+endfor
+
+syntax region vdInventoryItem start=/^\v[+*@]?\d+/ end=/$/ oneline
+
+highlight link vdIII Number
+syntax match vdIII /\v(^\D?)@<=\zs(\d+)\ze\t/ containedin=VdInventoryItem
+
+syntax match vdHlGroup_di /\v(^\D?\d+1\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+syntax match vdHlGroup_ex /\v(^\D?\d+2\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+syntax match vdHlGroup_ln /\v(^\D?\d+3\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+syntax match vdHlGroup_pi /\v(^\D?\d+4\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+
+" polyglot ends "'''.lstrip()
 
 ""; '''
 finish
-""; '''
+'''
 
 
 # Mandatary
-#TODO: Think in Path, define new Inventory interface
-
 #TODO: Rethink about folder and files
-
-# Vim related
-#TODO: Polyglot this file as the default vimrc
-#TODO: Respect LS_COLORS by utilizing bits in III
 
 
 __version__ = '0.0.1'
@@ -44,6 +70,7 @@ __version__ = '0.0.1'
 import argparse
 import datetime
 import difflib
+import functools
 import inspect
 import io
 import os
@@ -61,18 +88,22 @@ from pathlib import Path
 
 
 # =============================================================================
-# Global option
+# Global variables {
 # -----------------------------------------------------------------------------
 
 options = argparse.Namespace(
         debug=False,
         )
 
-VD_VIMRC_PATH = Path.home() / '.config' / 'vd' / 'vd.vimrc'
+VD_VIMRC_PATH = Path.home() / '.config' / 'vd' / 'vd2.vimrc'
+
+# -----------------------------------------------------------------------------
+# Global variables }
+# =============================================================================
 
 
 # =============================================================================
-# Generalized Utilities
+# Generalized Utilities {
 # -----------------------------------------------------------------------------
 
 class RegexCache:
@@ -304,12 +335,12 @@ def FUNC_LINE():
     return '[{}:{}]'.format(bf.f_code.co_name, bf.f_lineno)
 
 # -----------------------------------------------------------------------------
-# Generalized Utilities
+# Generalized Utilities }
 # =============================================================================
 
 
 # =============================================================================
-# Containers
+# Containers {
 # -----------------------------------------------------------------------------
 
 class InvalidIiiError(Exception):
@@ -329,26 +360,21 @@ class WTF(Exception):
 
 
 class InventoryItem:
-    def __init__(self, iii, path, is_untrack=False):
-        # III = Inventory Item Identifier
+    def __init__(self, iii, text, mark=None):
+        # III = Inventory Item Index
         self.iii = iii
-        self.str = path
-        self.path = Path(self.str)
-        self.is_untrack = is_untrack
+        self.path = Path(text).expanduser()
+        self.mark = mark or '.'
 
-    @property
-    def display_path(self):
-        text = self.str.rstrip('/')
-
-        homepath = Path.home() + '/'
-
+        self.text = text.rstrip('/')
         if self.isdir and not self.islink:
-            text += '/'
+            self.text += '/'
+        homepath = str(Path.home()) + '/'
+        if self.text.startswith(homepath):
+            self.text = os.path.join('~', self.text[len(homepath):])
 
-        if text.startswith(homepath):
-            text = os.path.join('~', text[len(homepath):])
-
-        return text
+    def __repr__(self):
+        return f'{self.mark.ljust(1)} {self.iii} [{self.text}]'
 
     @property
     def inode(self):
@@ -364,30 +390,67 @@ class InventoryItem:
 
     @property
     def exists(self):
-        return self.path.exists()
+        return self.path.exists() or self.islink
 
     @property
     def isdir(self):
-        return self.path.is_dir()
+        return self.path.is_dir() and not self.islink
 
     @property
     def isfile(self):
-        return self.path.is_file()
+        return self.path.is_file() and not self.islink
+
+    @property
+    def isfifo(self):
+        return self.path.is_fifo() and not self.islink
 
     @property
     def islink(self):
         return self.path.is_symlink()
 
+    @property
+    def type(self):
+        if self.isdir:
+            return 1
+        if self.isfile and os.access(self.path, os.X_OK):
+            return 2
+        if self.islink:
+            return 3
+        if self.isfifo:
+            return 4
+        return 0
 
 class Inventory:
     def __init__(self):
-        ...
+        self.content = []
 
-    def append(self):
-        ...
+    def __len__(self):
+        return len(self.content)
+
+    def __iter__(self):
+        return iter(self.content)
+
+    def __getitem__(self, index):
+        return self.content[index]
+
+    def __eq__(self, other):
+        if not isinstance(other, Inventory):
+            return False
+
+        return self.content == other.content
+
+    def append(self, iii, text, mark=None):
+        if not text:
+            self.content.append(None)
+        else:
+            self.content.append(InventoryItem(iii, text, mark=mark))
 
     def freeze(self):
-        ...
+        offset = 10 ** (len(str(len(self.content))))
+        iii = 1
+        for item in self.content:
+            item.iii = (offset + iii) * 10 + item.type
+            iii += 1
 
 
 class VirtualOperation:
@@ -452,20 +515,48 @@ class RotateRenameOperation(VirtualMultiTargetOperation):
     pass
 
 # -----------------------------------------------------------------------------
-# Containers
+# Containers }
 # =============================================================================
 
 # =============================================================================
-# Specialized Utilities
+# Specialized Utilities {
 # -----------------------------------------------------------------------------
 
+@functools.lru_cache
+def screen_width():
+    return shutil.get_terminal_size().columns
+
+
+def hint_text():
+    sepline = '# ' + ('=' * 77)
+
+    ret = [
+            sepline,
+            '# - Add a path to track it.',
+            '# - Sort the paths as you want.',
+            "# - Add a '#' before the id to untrack an item.",
+            "# - Add a '+' before the id to expand non-hidden items under the directory.",
+            "# - Add a '*' before the id to expand all items under the directory.",
+            "# - Add a '@' before the id to resolve the soft link.",
+            ]
+
+    if os.path.isfile(VD_VIMRC_PATH):
+        ret.append('# - Configure hotkeys in ~/.config/vd/vd.vimrc')
+    else:
+        ret.append('# - Setup default vd.vimrc with')
+        ret.append('#   $ vd --vimrc')
+
+    ret.append(sepline)
+
+    return ret
+
 # -----------------------------------------------------------------------------
-# Specialized Utilities
+# Specialized Utilities }
 # =============================================================================
 
 
 # =============================================================================
-# "Step" functions
+# "Step" functions {
 # -----------------------------------------------------------------------------
 # Step functions have to return a tuple containing
 # [0] the next step function to be invoked, and
@@ -477,11 +568,76 @@ class RotateRenameOperation(VirtualMultiTargetOperation):
 
 def step_vim_edit_inventory(base, inventory):
     debug(FUNC_LINE())
-    return (exit, 0)
+
+    with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
+        # Write inventory into tempfile
+        with open(tf.name, mode='w', encoding='utf8') as f:
+            def writeline(line=''):
+                f.write(line + '\n')
+
+            def writelines(lines=[]):
+                for line in lines:
+                    writeline(line)
+
+            writelines(hint_text())
+            writeline()
+
+            if isinstance(inventory, Inventory):
+                for item in inventory:
+                    if item is None:
+                        writeline()
+                    elif item.iii is None:
+                        writeline(f'{item.text}')
+                    else:
+                        writeline(f'{item.iii}\t{item.text}')
+            else:
+                for line in inventory:
+                    writeline(f'{line}')
+            f.flush()
+
+        # Invoke vim to edit item list
+        cmd = ['vim', tf.name, '+normal }']
+
+        if os.path.isfile(VD_VIMRC_PATH):
+            cmd += ['+source ' + str(VD_VIMRC_PATH)]
+        else:
+            cmd += ['+source ' + __file__]
+
+        if len(inventory):
+            cmd += ['+set tabstop=' + str(len(str(inventory[0].iii)) + 4)]
+
+        sub.call(cmd, stdin=open('/dev/tty'))
+        print()
+
+        # Parse tempfile content
+        new = Inventory()
+        with open(tf.name, mode='r', encoding='utf8') as f:
+            for line in f:
+                line = line.rstrip('\n')
+
+                if not line:
+                    new.append(None, None)
+                    continue
+
+                rec = RegexCache(line)
+
+                if rec.match(r'^([#+*@]?) *(\d+)\t+(.*)$'):
+                    mark, iii, text = rec.groups()
+                    new.append(iii, text, mark)
+
+                elif line.startswith('#'):
+                    continue
+
+                else:
+                    new.append(None, line, False)
+
+    return (step_calculate_inventory_diff, base, new)
 
 
 def step_calculate_inventory_diff(base, new):
     debug(FUNC_LINE())
+    for item in new:
+        print(item)
     return (exit, 0)
 
 
@@ -509,8 +665,26 @@ def step_expand_inventory(new):
     debug(FUNC_LINE())
     return (exit, 0)
 
+
+def edit_vd_vimrc():
+    debug(FUNC_LINE())
+
+    VD_VIMRC_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    if VD_VIMRC_PATH.exists() and not VD_VIMRC_PATH.is_file():
+        error(VD_VIMRC_PATH, 'exists and it\'s not a file')
+        return 1
+
+    if not VD_VIMRC_PATH.exists():
+        # deploy a new one
+        with VD_VIMRC_PATH.open('w') as vd_vimrc:
+            vd_vimrc.write(vimrc)
+
+    print(VD_VIMRC_PATH)
+    return sub.call(['vim', VD_VIMRC_PATH])
+
 # -----------------------------------------------------------------------------
-# "Step" functions
+# "Step" functions }
 # =============================================================================
 
 
@@ -557,10 +731,10 @@ def main():
         exit(1)
 
     if args.vimrc:
-        exit(open_vd_vimrc())
+        exit(edit_vd_vimrc())
 
     options.debug = args.debug
-    debug(options)
+    debug(FUNC_LINE(), options)
 
     # =========================================================================
     # Collect initial targets
@@ -569,32 +743,31 @@ def main():
     # Targets from stdin are not expanded
     # If none provided, '.' is expanded
     # -------------------------------------------------------------------------
-
     targets = []
 
     for target in fsorted(args.targets):
-        targets.append((target, True))
+        targets.append(target)
 
     if not sys.stdin.isatty():
         for line in sys.stdin:
-            targets.append((line.rstrip('\n'), False))
+            targets.append(line.rstrip('\n'))
 
     if not targets:
-        targets.append(('.', True))
+        targets.append('.')
 
-    # inventory = Inventory()
+    inventory = Inventory()
     # inventory.ignore_hidden = not args.all
     # inventory.ignore_duplicated_path = True
 
-    # for t, e in targets:
-    #     if t:
-    #         inventory.append(t, expand=e)
+    for target in targets:
+        if target:
+            inventory.append(iii=None, text=target)
 
-    # has_error = False
-    # for _, path in inventory.content:
-    #     if not islink(path) and not exists(path):
-    #         print_path_with_prompt(error, red, 'File does not exist:', path)
-    #         has_error = True
+    has_error = False
+    for item in inventory:
+        if not item.exists:
+            print_path_with_prompt(error, red, 'File does not exist:', item.text)
+            has_error = True
 
     if has_error:
         exit(1)
@@ -603,7 +776,7 @@ def main():
         info('No targets to edit')
         exit(0)
 
-    inventory.build_index()
+    inventory.freeze()
 
     # =========================================================================
     # Main loop
