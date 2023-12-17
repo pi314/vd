@@ -214,10 +214,9 @@ def str_width(s):
 
 
 def shrinkuser(path):
-    homepath = expanduser('~').rstrip('/') + '/'
+    homepath = os.path.expanduser('~').rstrip('/') + '/'
     if path.startswith(homepath):
         return join('~', path[len(homepath):])
-
     return path
 
 
@@ -363,18 +362,27 @@ class InventoryItem:
     def __init__(self, iii, text, mark=None):
         # III = Inventory Item Index
         self.iii = iii
-        self.path = Path(text).expanduser()
-        self.mark = mark or '.'
 
-        self.text = text.rstrip('/')
-        if self.isdir and not self.islink:
-            self.text += '/'
-        homepath = str(Path.home()) + '/'
-        if self.text.startswith(homepath):
-            self.text = os.path.join('~', self.text[len(homepath):])
+        if not isinstance(mark, str) or mark not in '#*+@':
+            self.mark = '.'
+        else:
+            self.mark = mark
+
+        self.txt = text
+        self.path = Path(text).expanduser()
 
     def __repr__(self):
         return f'{self.mark.ljust(1)} {self.iii} [{self.text}]'
+
+    @property
+    def text(self):
+        ret = self.txt.rstrip('/')
+
+        # Add postfix to display text
+        if self.isdir:
+            ret += '/'
+
+        return shrinkuser(ret)
 
     @property
     def inode(self):
@@ -407,6 +415,27 @@ class InventoryItem:
     @property
     def islink(self):
         return self.path.is_symlink()
+
+    def expand(self):
+        if not self.exists:
+            return []
+
+        if not self.isdir:
+            return [self.text]
+
+        ret = []
+
+        children = fsorted(p.name for p in self.path.iterdir())
+        for child in children:
+            if child.startswith('.') and self.mark != '*':
+                continue
+
+            ret.append(os.path.join(self.text, child))
+
+        if not ret:
+            ret = [self.text]
+
+        return ret
 
     @property
     def type(self):
@@ -446,9 +475,17 @@ class Inventory:
             self.content.append(InventoryItem(iii, text, mark=mark))
 
     def freeze(self):
+        while self.content[0] is None:
+            self.content.pop(0)
+        while self.content[-1] is None:
+            self.content.pop(-1)
+
         offset = 10 ** (len(str(len(self.content))))
         iii = 1
         for item in self.content:
+            if not item:
+                continue
+
             item.iii = (offset + iii) * 10 + item.type
             iii += 1
 
@@ -631,6 +668,8 @@ def step_vim_edit_inventory(base, inventory):
                 else:
                     new.append(None, line, False)
 
+        new.freeze()
+
     return (step_calculate_inventory_diff, base, new)
 
 
@@ -746,18 +785,22 @@ def main():
     targets = []
 
     for target in fsorted(args.targets):
-        targets.append(target)
+        for i in InventoryItem(iii=None, text=target).expand():
+            targets.append(i)
 
     if not sys.stdin.isatty():
         for line in sys.stdin:
             targets.append(line.rstrip('\n'))
 
     if not targets:
-        targets.append('.')
+        for i in InventoryItem(
+                iii=None,
+                text='.',
+                mark=('*' if args.all else '+')
+                ).expand():
+            targets.append(i[2:])
 
     inventory = Inventory()
-    # inventory.ignore_hidden = not args.all
-    # inventory.ignore_duplicated_path = True
 
     for target in targets:
         if target:
