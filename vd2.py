@@ -5,7 +5,7 @@
 " vd vimrc
 " =============================================================================
 
-" Turn off line number for not interfere with item key
+" Turn off line number for not interferring with item index
 set nonu
 
 set nowrap
@@ -209,6 +209,12 @@ def has_error():
     return bool(error_lines)
 
 
+def FUNC_LINE():
+    cf = inspect.currentframe()
+    bf = cf.f_back
+    return '[{}:{}]'.format(bf.f_code.co_name, bf.f_lineno)
+
+
 def str_width(s):
     return sum(1 + (unicodedata.east_asian_width(c) in 'WF') for c in decolor(s))
 
@@ -327,12 +333,6 @@ def gen_tmp_file_name(path, postfix='.vdtmp.'):
             )
     return tmp_file_name
 
-
-def FUNC_LINE():
-    cf = inspect.currentframe()
-    bf = cf.f_back
-    return '[{}:{}]'.format(bf.f_code.co_name, bf.f_lineno)
-
 # -----------------------------------------------------------------------------
 # Generalized Utilities }
 # =============================================================================
@@ -358,24 +358,16 @@ class WTF(Exception):
     pass
 
 
-class InventoryItem:
-    def __init__(self, iii, text, mark=None):
-        # III = Inventory Item Index
-        self.iii = iii
-
-        if not isinstance(mark, str) or mark not in '#*+@':
-            self.mark = '.'
-        else:
-            self.mark = mark
-
+class VDPath:
+    def __init__(self, text):
         self.txt = text
         self.path = Path(text).expanduser()
 
-    def __repr__(self):
-        return f'{self.mark.ljust(1)} {self.iii} [{self.text}]'
-
     @property
     def text(self):
+        if not self.txt:
+            return '.'
+
         ret = self.txt.rstrip('/')
 
         # Add postfix to display text
@@ -413,41 +405,68 @@ class InventoryItem:
         return self.path.is_fifo() and not self.islink
 
     @property
+    def isexecutable(self):
+        return os.access(self.path, os.X_OK)
+
+    @property
     def islink(self):
         return self.path.is_symlink()
 
-    def expand(self):
+    def listdir(self, include_hidden):
         if not self.exists:
             return []
 
         if not self.isdir:
-            return [self.text]
+            return ['.'] if not self.txt else [self.text]
 
         ret = []
 
         children = fsorted(p.name for p in self.path.iterdir())
         for child in children:
-            if child.startswith('.') and self.mark != '*':
+            if child.startswith('.') and not include_hidden:
                 continue
 
-            ret.append(os.path.join(self.text, child))
+            ret.append(child if not self.txt
+                    else os.path.join(self.text, child)
+                    )
 
         if not ret:
-            ret = [self.text]
+            ret = ['.'] if not self.txt else [self.text]
 
         return ret
+
+
+class InventoryItem:
+    def __init__(self, iii, text, mark=None):
+        # III = Inventory Item Index
+        self.iii = iii
+
+        if not mark or not isinstance(mark, str) or mark not in '#*+@':
+            self.mark = '.'
+        else:
+            self.mark = mark
+
+        self.path = VDPath(text)
+
+    def __repr__(self):
+        return f'{self.mark.ljust(1)} {self.iii} [{self.text}]'
+
+    def __getattr__(self, attr):
+        if hasattr(self.path, attr):
+            return getattr(self.path, attr)
 
     @property
     def type(self):
         if self.isdir:
             return 1
-        if self.isfile and os.access(self.path, os.X_OK):
+        if self.isfile and self.isexecutable:
             return 2
         if self.islink:
             return 3
         if self.isfifo:
             return 4
         return 0
+
 
 class Inventory:
     def __init__(self):
@@ -785,7 +804,7 @@ def main():
     targets = []
 
     for target in fsorted(args.targets):
-        for i in InventoryItem(iii=None, text=target).expand():
+        for i in VDPath(target).listdir(args.all):
             targets.append(i)
 
     if not sys.stdin.isatty():
@@ -793,12 +812,8 @@ def main():
             targets.append(line.rstrip('\n'))
 
     if not targets:
-        for i in InventoryItem(
-                iii=None,
-                text='.',
-                mark=('*' if args.all else '+')
-                ).expand():
-            targets.append(i[2:])
+        for i in VDPath('').listdir(args.all):
+            targets.append(i)
 
     inventory = Inventory()
 
