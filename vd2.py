@@ -806,15 +806,17 @@ def edit_vd_vimrc():
     if VD_VIMRC_PATH.exists():
         return sub.call(['vim', VD_VIMRC_PATH])
 
-    # Deploy one if it does not exist
+    # Deploy vd vimrc if user didn't have one
     with tempfile.NamedTemporaryFile() as tf:
+        # Write it to a temp file first
         with open(tf.name, mode='w', encoding='utf8') as f:
             f.write(vimrc)
 
         return sub.call([
             'vim', VD_VIMRC_PATH,
-            '+0read ' + tf.name,
-            '+normal Gddgg',
+            '+0read ' + tf.name, # Read the content into buffer
+            '+$d_', # Remove the extra empty line with the black hole register
+            '+normal gg', # Move cursor back to 1st line
             ])
 
 
