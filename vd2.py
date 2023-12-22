@@ -5,53 +5,67 @@
 " vd vimrc
 " =============================================================================
 
-" Turn off line number for not interferring with item index
-set nonu
+let g:vd_disable_default_options = get(g:, 'vd_disable_default_options', v:false)
+let g:vd_disable_key_mappings = get(g:, 'vd_disable_key_mappings', v:false)
+let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:false)
 
-set nowrap
+" ============================================================================='''.strip()
 
-set listchars=tab:\\x20│\\x20
+""; r'''
+if !g:vd_disable_default_options
+    " Turn off line number for not interferring with item index
+    set nonu
 
-" Just highlight some keyword for help reading
-set syntax=python
+    set nowrap
+endif
 
-" Rename item
-nnoremap cc ^WC
-nnoremap S ^WC
+if !g:vd_disable_key_mappings
+    " Rename item
+    nnoremap cc ^WC
+    nnoremap S ^WC
+endif
 
-" Parse $LS_COLORS for basic highlighting
-for s:token in split($LS_COLORS, ':')
-    let s:m = matchlist(s:token, '\v^(\w+)\=([0-9;]+)$')
-    let [s:unused, s:glob, s:code; s:unused] = s:m
-    let s:cterm = ''
-    let s:ctermfg = ''
-    let s:ctermbg = ''
-    for s:code_token in split(s:code, ';')
-        if s:code_token == '1' || s:code_token == '01'
-            let s:cterm = 'cterm=bold'
-        elseif s:code_token[0] == '3'
-            let s:ctermfg = 'ctermfg='. s:code_token[1:]
-        elseif s:code_token[0] == '4'
-            let s:ctermbg = 'ctermbg='. s:code_token[1:]
-        endif
+if !g:vd_disable_syntax_highlight
+    set listchars=tab:\\x20│\\x20
+
+    highlight link vdComment Comment
+    syntax region vdComment start=/^#/ end=/$/ oneline
+
+    " Parse $LS_COLORS for basic highlighting
+    for s:token in split($LS_COLORS, ':')
+        let s:m = matchlist(s:token, '\v^(\w+)\=([0-9;]+)$')
+        let [s:unused, s:glob, s:code; s:unused] = s:m
+        let s:cterm = ''
+        let s:ctermfg = ''
+        let s:ctermbg = ''
+        for s:code_token in split(s:code, ';')
+            if s:code_token == '1' || s:code_token == '01'
+                let s:cterm = 'cterm=bold'
+            elseif s:code_token[0] == '3'
+                let s:ctermfg = 'ctermfg='. s:code_token[1:]
+            elseif s:code_token[0] == '4'
+                let s:ctermbg = 'ctermbg='. s:code_token[1:]
+            endif
+        endfor
+        let s:hlgroup = 'vdHlGroup_'. s:glob
+        exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
     endfor
-    let s:hlgroup = 'vdHlGroup_'. s:glob
-    exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
-endfor
 
-syntax region vdInventoryItem start=/^\v[+*@]?\d+/ end=/$/ oneline
+    syntax region vdInventoryItem start=/^\v[+*@]?\d+/ end=/$/ oneline
 
-highlight link vdIII Number
-syntax match vdIII /\v(^\D?)@<=\zs(\d+)\ze\t/ containedin=VdInventoryItem
+    highlight link vdIII Number
+    syntax match vdIII /\v(^\D?)@<=\zs(\d+)\ze\t/ containedin=VdInventoryItem
 
-syntax match vdHlGroup_di /\v(^\D?\d+1\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-syntax match vdHlGroup_ex /\v(^\D?\d+2\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-syntax match vdHlGroup_ln /\v(^\D?\d+3\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-syntax match vdHlGroup_pi /\v(^\D?\d+4\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match vdHlGroup_di /\v(^\D?\d+1\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match vdHlGroup_ex /\v(^\D?\d+2\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match vdHlGroup_ln /\v(^\D?\d+3\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match vdHlGroup_pi /\v(^\D?\d+4\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
 
-" polyglot ends "'''.lstrip()
+    highlight vdHlGroup_err ctermfg=black ctermbg=red
+    syntax match vdHlGroup_err /\v(^\D?\d+9\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
 
-""; '''
+endif
+
 finish
 '''
 
@@ -59,6 +73,13 @@ finish
 # Mandatary
 #TODO: Rethink about folder and files
 
+# Vim related
+#TODO: Refine syntax highlighting,
+#TODO: Check if iii.type enum definition could be reused for vim and python
+#TODO: Put "widgets" on the top area, move cursor onto them and press to activate
+
+# Enhancement
+#TODO: Define some commands like ":sort by date" ?
 
 __version__ = '0.0.1'
 
@@ -71,6 +92,7 @@ import argparse
 import datetime
 import difflib
 import functools
+import glob
 import inspect
 import io
 import os
@@ -323,7 +345,7 @@ def prompt_confirm(prompt_text, options, allow_empty_input=True):
     return us
 
 
-def gen_tmp_file_name(path, postfix='.vdtmp.'):
+def gen_unique_file_name(path, postfix='.vdtmp.'):
     now = datetime.datetime.now()
     tmp_file_name = '{orig_path}{postfix}{timestamp}[{getpid}]'.format(
             orig_path=path.lstrip('/'),
@@ -358,10 +380,29 @@ class WTF(Exception):
     pass
 
 
+class VDGlob:
+    def __init__(self, text):
+        self.txt = os.path.expanduser(text)
+
+    def __repr__(self):
+        return f'VDGlob({self.text})'
+
+    @property
+    def text(self):
+        return shrinkuser(self.txt)
+
+    def glob(self):
+        ret = glob.glob(self.txt, recursive=True)
+        return fsorted(ret)
+
+
 class VDPath:
     def __init__(self, text):
         self.txt = text
         self.path = Path(text).expanduser()
+
+    def __repr__(self):
+        return f'VDPath({self.text})'
 
     @property
     def text(self):
@@ -371,7 +412,7 @@ class VDPath:
         ret = self.txt.rstrip('/')
 
         # Add postfix to display text
-        if self.isdir:
+        if self.isdir and not self.txt.endswith('*'):
             ret += '/'
 
         return shrinkuser(ret)
@@ -436,7 +477,7 @@ class VDPath:
         return ret
 
 
-class InventoryItem:
+class TrackingItem:
     def __init__(self, iii, text, mark=None):
         # III = Inventory Item Index
         self.iii = iii
@@ -457,6 +498,8 @@ class InventoryItem:
 
     @property
     def type(self):
+        if not self.exists:
+            return 9
         if self.isdir:
             return 1
         if self.isfile and self.isexecutable:
@@ -487,11 +530,21 @@ class Inventory:
 
         return self.content == other.content
 
-    def append(self, iii, text, mark=None):
-        if not text:
+    def append(self, text, iii=None, mark=None):
+        if text is None:
             self.content.append(None)
+
+        elif isinstance(text, TrackingItem):
+            self.content.append(text)
+
+        elif iii is not None:
+            self.content.append(TrackingItem(iii, text, mark=mark))
+
+        elif '*' in text.replace('[*]', '_'):
+            self.content.append(VDGlob(text))
+
         else:
-            self.content.append(InventoryItem(iii, text, mark=mark))
+            self.content.append(VDPath(text.replace('[*]', '*')))
 
     def freeze(self):
         while self.content[0] is None:
@@ -502,7 +555,10 @@ class Inventory:
         offset = 10 ** (len(str(len(self.content))))
         iii = 1
         for item in self.content:
-            if not item:
+            if not isinstance(item, TrackingItem):
+                continue
+
+            if item.iii is not None:
                 continue
 
             item.iii = (offset + iii) * 10 + item.type
@@ -625,7 +681,7 @@ def hint_text():
 def step_vim_edit_inventory(base, inventory):
     debug(FUNC_LINE())
 
-    with tempfile.NamedTemporaryFile(prefix='vd', suffix='vd') as tf:
+    with tempfile.NamedTemporaryFile(prefix='vd', suffix='.vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
             def writeline(line=''):
@@ -652,15 +708,22 @@ def step_vim_edit_inventory(base, inventory):
             f.flush()
 
         # Invoke vim to edit item list
-        cmd = ['vim', tf.name, '+normal }']
+        cmd = ['vim', tf.name]
 
+        cmd.append('+set ft=vd')
+
+        # Source vd.vimrc
         if os.path.isfile(VD_VIMRC_PATH):
             cmd += ['+source ' + str(VD_VIMRC_PATH)]
-        else:
-            cmd += ['+source ' + __file__]
 
+        cmd += ['+source ' + __file__]
+
+        # Set proper tabstop for my (arguably) perfect vertical separation line
         if len(inventory):
-            cmd += ['+set tabstop=' + str(len(str(inventory[0].iii)) + 4)]
+            cmd.append('+set tabstop=' + str(len(str(inventory[0].iii)) + 4))
+
+        # Move cursor to the line above first inventory item
+        cmd.append('+normal }')
 
         sub.call(cmd, stdin=open('/dev/tty'))
         print()
@@ -672,20 +735,20 @@ def step_vim_edit_inventory(base, inventory):
                 line = line.rstrip('\n')
 
                 if not line:
-                    new.append(None, None)
+                    new.append(None)
                     continue
 
                 rec = RegexCache(line)
 
                 if rec.match(r'^([#+*@]?) *(\d+)\t+(.*)$'):
                     mark, iii, text = rec.groups()
-                    new.append(iii, text, mark)
+                    new.append(text, iii=iii, mark=mark)
 
                 elif line.startswith('#'):
                     continue
 
                 else:
-                    new.append(None, line, False)
+                    new.append(line)
 
         new.freeze()
 
@@ -696,6 +759,11 @@ def step_calculate_inventory_diff(base, new):
     debug(FUNC_LINE())
     for item in new:
         print(item)
+
+        if isinstance(item, VDGlob):
+            for i in item.glob():
+                print(f'   [{i}]')
+
     return (exit, 0)
 
 
@@ -733,13 +801,22 @@ def edit_vd_vimrc():
         error(VD_VIMRC_PATH, 'exists and it\'s not a file')
         return 1
 
-    if not VD_VIMRC_PATH.exists():
-        # deploy a new one
-        with VD_VIMRC_PATH.open('w') as vd_vimrc:
-            vd_vimrc.write(vimrc)
-
     print(VD_VIMRC_PATH)
-    return sub.call(['vim', VD_VIMRC_PATH])
+
+    if VD_VIMRC_PATH.exists():
+        return sub.call(['vim', VD_VIMRC_PATH])
+
+    # Deploy one if it does not exist
+    with tempfile.NamedTemporaryFile() as tf:
+        with open(tf.name, mode='w', encoding='utf8') as f:
+            f.write(vimrc)
+
+        return sub.call([
+            'vim', VD_VIMRC_PATH,
+            '+0read ' + tf.name,
+            '+normal Gddgg',
+            ])
+
 
 # -----------------------------------------------------------------------------
 # "Step" functions }
@@ -819,7 +896,7 @@ def main():
 
     for target in targets:
         if target:
-            inventory.append(iii=None, text=target)
+            inventory.append(TrackingItem(None, target))
 
     has_error = False
     for item in inventory:
