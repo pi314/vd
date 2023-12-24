@@ -32,22 +32,42 @@ if !g:vd_disable_syntax_highlight
     syntax region vdComment start=/^#/ end=/$/ oneline
 
     " Parse $LS_COLORS for basic highlighting
-    for s:token in split($LS_COLORS, ':')
-        let s:m = matchlist(s:token, '\v^(\w+)\=([0-9;]+)$')
+    for s:entry in split($LS_COLORS, ':')
+        let s:m = matchlist(s:entry, '\v^(\w+)\=([0-9;]+)$')
         let [s:unused, s:glob, s:code; s:unused] = s:m
-        let s:cterm = ''
-        let s:ctermfg = ''
-        let s:ctermbg = ''
-        for s:code_token in split(s:code, ';')
-            if s:code_token == '1' || s:code_token == '01'
-                let s:cterm = 'cterm=bold'
-            elseif s:code_token[0] == '3'
-                let s:ctermfg = 'ctermfg='. s:code_token[1:]
-            elseif s:code_token[0] == '4'
-                let s:ctermbg = 'ctermbg='. s:code_token[1:]
+
+        let s:code_list = split(s:code, ';')
+        call map(s:code_list, 'str2nr(v:val, 10)')
+
+        while !empty(s:code_list)
+            if s:code_list[0] == 1
+                let s:attr = 'bold'
+
+            elseif 30 <= s:code_list[0] && s:code_list[0] <= 37
+                let s:fg = (s:code_list[0] - 30)
+
+            elseif 40 <= s:code_list[0] && s:code_list[0] <= 47
+                let s:bg = (s:code_list[0] - 40)
+
+            elseif s:code_list[0:1] == [38, 5]
+                let s:code_list = s:code_list[2:]
+                let s:fg = s:code_list[0]
+
+            elseif s:code_list[0:1] == [48, 5]
+                let s:code_list = s:code_list[2:]
+                let s:bg = s:code_list[0]
+
             endif
-        endfor
+
+            call remove(s:code_list, 0)
+        endwhile
         let s:hlgroup = 'vdHlGroup_'. s:glob
+
+        let s:cterm = exists('s:attr') ? ('cterm='. s:attr) : ''
+        let s:ctermfg = exists('s:fg') ? ('ctermfg='. string(s:fg)) : ''
+        let s:ctermbg = exists('s:bg') ? ('ctermbg='. string(s:bg)) : ''
+
+        echom join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
         exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
     endfor
 
