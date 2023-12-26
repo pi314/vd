@@ -67,7 +67,6 @@ if !g:vd_disable_syntax_highlight
         let s:ctermfg = exists('s:fg') ? ('ctermfg='. string(s:fg)) : ''
         let s:ctermbg = exists('s:bg') ? ('ctermbg='. string(s:bg)) : ''
 
-        echom join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
         exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
     endfor
 
@@ -100,6 +99,7 @@ finish
 
 # Enhancement
 #TODO: Define some commands like ":sort by date" ?
+###==> ":uniq" ?
 
 __version__ = '0.0.1'
 
@@ -204,6 +204,30 @@ def decolor(s):
     return decolor_regex.sub('', s)
 
 
+class Logger:
+    pass
+
+logger = Logger()
+
+
+def print_cmd(cmd, print_func=print):
+    tokens = [
+            magenta('$'),
+            cyan(cmd[0]),
+            ]
+
+    for arg in cmd[1:]:
+        qarg = shlex.quote(arg)
+        if qarg.startswith(("'", '"')):
+            qcolor = orange
+        else:
+            qcolor = nocolor
+
+        tokens.append(qcolor(qarg))
+
+    print_func(' '.join(tokens))
+
+
 def print_stderr(*args, **kwargs):
     kwargs['file'] = sys.stderr
     print(*args, **kwargs)
@@ -211,7 +235,8 @@ def print_stderr(*args, **kwargs):
 
 def print_msg(tag, print_func, *args, **kwargs):
     with io.StringIO() as buffer:
-        print(*args, file=buffer, end='', **kwargs)
+        kwargs['end'] = ''
+        print(*args, file=buffer, **kwargs)
 
         for line in buffer.getvalue().split('\n'):
             print_func(tag, line.rstrip('\n'))
@@ -424,6 +449,9 @@ class VDPath:
     def __repr__(self):
         return f'VDPath({self.text})'
 
+    def __eq__(self, other):
+        return self.text == other.text
+
     @property
     def text(self):
         if not self.txt:
@@ -552,13 +580,14 @@ class Inventory:
 
     def append(self, text, iii=None, mark=None):
         if text is None:
-            self.content.append(None)
+            if (self.content or [None])[-1] is not None:
+                self.content.append(None)
 
         elif isinstance(text, TrackingItem):
             self.content.append(text)
 
         elif iii is not None:
-            self.content.append(TrackingItem(iii, text, mark=mark))
+            self.content.append(TrackingItem(int(iii, 10), text, mark=mark))
 
         elif '*' in text.replace('[*]', '_'):
             self.content.append(VDGlob(text))
@@ -567,27 +596,23 @@ class Inventory:
             self.content.append(VDPath(text.replace('[*]', '*')))
 
     def freeze(self):
-        while self.content[0] is None:
+        while self.content and self.content[0] is None:
             self.content.pop(0)
-        while self.content[-1] is None:
+        while self.content and self.content[-1] is None:
             self.content.pop(-1)
+
+        path_iii_mapping = {}
 
         offset = 10 ** (len(str(len(self.content))))
         iii = 1
         for item in self.content:
-            if not isinstance(item, TrackingItem):
-                continue
-
-            if item.iii is not None:
-                continue
-
-            item.iii = (offset + iii) * 10 + item.type
-            iii += 1
-
-
-class VirtualOperation:
-    def __hash__(self):
-        return id(self)
+            if isinstance(item, TrackingItem) and item.iii is None:
+                if item.text in path_iii_mapping:
+                    item.iii = path_iii_mapping[item.text]
+                else:
+                    item.iii = (offset + iii) * 10 + item.type
+                    path_iii_mapping[item.text] = item.iii
+                    iii += 1
 
 
 class VirtualSingleTargetOperation:
@@ -745,6 +770,7 @@ def step_vim_edit_inventory(base, inventory):
         # Move cursor to the line above first inventory item
         cmd.append('+normal }')
 
+        print_cmd(cmd, print_func=debug)
         sub.call(cmd, stdin=open('/dev/tty'))
         print()
 
@@ -761,8 +787,8 @@ def step_vim_edit_inventory(base, inventory):
                 rec = RegexCache(line)
 
                 if rec.match(r'^([#+*@]?) *(\d+)\t+(.*)$'):
-                    mark, iii, text = rec.groups()
-                    new.append(text, iii=iii, mark=mark)
+                    mark, iii, path = rec.groups()
+                    new.append(path, iii=iii, mark=mark)
 
                 elif line.startswith('#'):
                     continue
@@ -777,19 +803,83 @@ def step_vim_edit_inventory(base, inventory):
 
 def step_calculate_inventory_diff(base, new):
     debug(FUNC_LINE())
-    for item in new:
-        print(item)
 
-        if isinstance(item, VDGlob):
-            for i in item.glob():
-                print(f'   [{i}]')
+    debug(magenta('==== inventory (base) ===='))
+    for item in base:
+        debug(item)
+    debug(magenta('-------------------------'))
+    for item in new:
+        debug(item)
+    debug(magenta('==== inventory (new) ===='))
+
+    class ItemTransform:
+        def __init__(self):
+            self.src = None
+            self.dst = []
+
+        def set_src(self, src):
+            self.src = src
+
+        def add_dst(self, dst):
+            if dst.mark == '#':
+                self.dst.append(None)
+            else:
+                self.dst.append(dst)
+
+    iii_changes = dict()
+
+    for item in base:
+        if not isinstance(item, TrackingItem):
+            continue
+
+        iii_changes[item.iii] = ItemTransform()
+        iii_changes[item.iii].set_src(item)
+
+    for item in new:
+        if not isinstance(item, TrackingItem):
+            continue
+
+        if item.iii not in iii_changes:
+            errorq(f'{red(item.iii)}  {item.text} {red}◄─ Invalid index{nocolor}')
+            continue
+
+        iii_changes[item.iii].add_dst(item)
+
+    # Filter out none-changed items
+    for iii, it in list(iii_changes.items()):
+        if [it.src.text] == [dst.text for dst in it.dst if dst is not None]:
+            del iii_changes[iii]
+
+        if not it.dst:
+            it.dst = [False]
+
+    print()
+    print('transform')
+    for iii, ft in iii_changes.items():
+        print(f'{iii} [{ft.src.text}] => [{", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in ft.dst)}]')
+
+    if has_error():
+        errorflush()
+        return (step_ask_fix_it, base, new)
 
     return (exit, 0)
 
 
 def step_ask_fix_it(base, new):
     debug(FUNC_LINE())
-    return (exit, 0)
+
+    errorflush()
+
+    user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
+            allow_empty_input=False)
+
+    if user_confirm == 'edit':
+        return (step_vim_edit_inventory, base, new)
+
+    if user_confirm == 'redo':
+        return (step_vim_edit_inventory, base, base)
+
+    return (exit, 1)
 
 
 def step_check_change_list(base, new, change_list_raw):
