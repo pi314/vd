@@ -244,6 +244,11 @@ def print_msg(tag, print_func, *args, **kwargs):
 
 def debug(*args, **kwargs):
     if options.debug:
+
+        if not args and not kwargs:
+            print()
+            return
+
         print_msg(magenta('[Debug]'), print_stderr, *args, **kwargs)
 
 
@@ -253,6 +258,7 @@ def info(*args, **kwargs):
 
 def warning(*args, **kwargs):
     print_msg(yellow('[Warning]'), print_stderr, *args, **kwargs)
+
 
 
 error_lines = []
@@ -307,6 +313,17 @@ def fsorted(iterable, key=None):
         sort_key = lambda x: filename_as_key(key(x))
 
     return sorted(iterable, key=sort_key)
+
+
+def uniq(lst):
+    added = set()
+    ret = []
+    for elem in lst:
+        if elem not in added:
+            added.add(elem)
+            ret.append(elem)
+
+    return ret
 
 
 class UserSelection:
@@ -464,6 +481,9 @@ class VDPath:
             ret += '/'
 
         return shrinkuser(ret)
+
+    def __eq__(self, other):
+        return self.text == other.text
 
     @property
     def inode(self):
@@ -812,13 +832,10 @@ def step_calculate_inventory_diff(base, new):
         debug(item)
     debug(magenta('==== inventory (new) ===='))
 
-    class ItemTransform:
-        def __init__(self):
-            self.src = None
-            self.dst = []
-
-        def set_src(self, src):
+    class ItemMapping:
+        def __init__(self, src):
             self.src = src
+            self.dst = []
 
         def add_dst(self, dst):
             if dst.mark == '#':
@@ -826,37 +843,36 @@ def step_calculate_inventory_diff(base, new):
             else:
                 self.dst.append(dst)
 
-    iii_changes = dict()
+    item_mappings = dict()
 
+    # Put items from base inventory into item mapping
     for item in base:
         if not isinstance(item, TrackingItem):
             continue
+        item_mappings[item.iii] = ItemMapping(item)
 
-        iii_changes[item.iii] = ItemTransform()
-        iii_changes[item.iii].set_src(item)
-
+    # Attach items from new inventory into item mapping
     for item in new:
-        if not isinstance(item, TrackingItem):
+        if not isinstance(item, TrackingItem): #TODO: None, VDPath, VDGlob
             continue
-
-        if item.iii not in iii_changes:
+        if item.iii not in item_mappings:
             errorq(f'{red(item.iii)}  {item.text} {red}◄─ Invalid index{nocolor}')
             continue
 
-        iii_changes[item.iii].add_dst(item)
+        item_mappings[item.iii].add_dst(item)
 
     # Filter out none-changed items
-    for iii, it in list(iii_changes.items()):
+    for iii, it in list(item_mappings.items()):
         if [it.src.text] == [dst.text for dst in it.dst if dst is not None]:
-            del iii_changes[iii]
+            del item_mappings[iii]
 
         if not it.dst:
             it.dst = [False]
 
-    print()
-    print('transform')
-    for iii, ft in iii_changes.items():
-        print(f'{iii} [{ft.src.text}] => [{", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in ft.dst)}]')
+    debug()
+    debug('Mapping')
+    for iii, ft in item_mappings.items():
+        debug(f'{iii} [{ft.src.text}] => [{", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in ft.dst)}]')
 
     if has_error():
         errorflush()
@@ -980,7 +996,8 @@ def main():
     if args.vimrc:
         exit(edit_vd_vimrc())
 
-    options.debug = args.debug
+    # options.debug = args.debug
+    options.debug = True
     debug(FUNC_LINE(), options)
 
     # =========================================================================
@@ -992,9 +1009,11 @@ def main():
     # -------------------------------------------------------------------------
     targets = []
 
-    for target in fsorted(args.targets):
+    for target in args.targets:
         for i in VDPath(target).listdir(args.all):
             targets.append(i)
+
+    targets = fsorted(targets)
 
     if not sys.stdin.isatty():
         for line in sys.stdin:
@@ -1003,6 +1022,8 @@ def main():
     if not targets:
         for i in VDPath('').listdir(args.all):
             targets.append(i)
+
+    targets = uniq(targets)
 
     inventory = Inventory()
 
@@ -1051,8 +1072,8 @@ def main():
     while next_call:
         func, *args = next_call
         try:
-            next_call = func(*args)
             prev_call = (func, *args)
+            next_call = func(*args)
         except TypeError as e:
             errorq(e)
             errorq(f'prev_call.func = {name(prev_call[0])}')
