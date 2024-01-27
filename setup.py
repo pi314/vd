@@ -10,7 +10,7 @@ setup(
     author='Chang-Yen Chih',
     author_email='michael66230@gmail.com',
     url=f'https://github.com/pi314/vd',
-    py_modules=['vd'],
+    py_modules=['vd', 'vd2'],
     keywords=['vidir'],
     entry_points = {
         'console_scripts': ['vd=vd:main', 'vd2=vd2:main'],

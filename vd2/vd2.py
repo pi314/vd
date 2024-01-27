@@ -101,8 +101,6 @@ finish
 #TODO: Define some commands like ":sort by date" ?
 ###==> ":uniq" ?
 
-__version__ = '0.0.1'
-
 
 # =============================================================================
 # Package Imports
