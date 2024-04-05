@@ -1,0 +1,82 @@
+" =============================================================================
+" vd vimrc
+" =============================================================================
+
+let g:vd_disable_default_options = get(g:, 'vd_disable_default_options', v:false)
+let g:vd_disable_key_mappings = get(g:, 'vd_disable_key_mappings', v:false)
+let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:false)
+
+" =============================================================================
+
+if !g:vd_disable_default_options
+    " Turn off line number for not interferring with item index
+    set nonu
+
+    set nowrap
+endif
+
+if !g:vd_disable_key_mappings
+    " Rename item
+    nnoremap cc ^WC
+    nnoremap S ^WC
+endif
+
+if !g:vd_disable_syntax_highlight
+    set listchars=tab:\\x20│\\x20
+
+    highlight link vdComment Comment
+    syntax region vdComment start=/^#/ end=/$/ oneline
+
+    " Parse $LS_COLORS for basic highlighting
+    for s:entry in split($LS_COLORS, ':')
+        let s:m = matchlist(s:entry, '\v^(\w+)\=([0-9;]+)$')
+        let [s:unused, s:glob, s:code; s:unused] = s:m
+
+        let s:code_list = split(s:code, ';')
+        call map(s:code_list, 'str2nr(v:val, 10)')
+
+        while !empty(s:code_list)
+            if s:code_list[0] == 1
+                let s:attr = 'bold'
+
+            elseif 30 <= s:code_list[0] && s:code_list[0] <= 37
+                let s:fg = (s:code_list[0] - 30)
+
+            elseif 40 <= s:code_list[0] && s:code_list[0] <= 47
+                let s:bg = (s:code_list[0] - 40)
+
+            elseif s:code_list[0:1] == [38, 5]
+                let s:code_list = s:code_list[2:]
+                let s:fg = s:code_list[0]
+
+            elseif s:code_list[0:1] == [48, 5]
+                let s:code_list = s:code_list[2:]
+                let s:bg = s:code_list[0]
+
+            endif
+
+            call remove(s:code_list, 0)
+        endwhile
+        let s:hlgroup = 'vdHlGroup_'. s:glob
+
+        let s:cterm = exists('s:attr') ? ('cterm='. s:attr) : ''
+        let s:ctermfg = exists('s:fg') ? ('ctermfg='. string(s:fg)) : ''
+        let s:ctermbg = exists('s:bg') ? ('ctermbg='. string(s:bg)) : ''
+
+        exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
+    endfor
+
+    syntax region vdInventoryItem start=/^\v[+*@]?\d+/ end=/$/ oneline
+
+    highlight link vdIII Number
+    syntax match vdIII /\v(^\D?)@<=\zs(\d+)\ze\t/ containedin=VdInventoryItem
+
+    syntax match vdHlGroup_di /\v(^\D?\d+1\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match vdHlGroup_ex /\v(^\D?\d+2\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match vdHlGroup_ln /\v(^\D?\d+3\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match vdHlGroup_pi /\v(^\D?\d+4\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+
+    highlight vdHlGroup_err ctermfg=black ctermbg=red
+    syntax match vdHlGroup_err /\v(^\D?\d+9\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+
+endif

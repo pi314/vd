@@ -1,94 +1,5 @@
 #!/usr/bin/env python3
 
-""; vimrc = r'''
-" =============================================================================
-" vd vimrc
-" =============================================================================
-
-let g:vd_disable_default_options = get(g:, 'vd_disable_default_options', v:false)
-let g:vd_disable_key_mappings = get(g:, 'vd_disable_key_mappings', v:false)
-let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:false)
-
-" ============================================================================='''.strip()
-
-""; r'''
-if !g:vd_disable_default_options
-    " Turn off line number for not interferring with item index
-    set nonu
-
-    set nowrap
-endif
-
-if !g:vd_disable_key_mappings
-    " Rename item
-    nnoremap cc ^WC
-    nnoremap S ^WC
-endif
-
-if !g:vd_disable_syntax_highlight
-    set listchars=tab:\\x20│\\x20
-
-    highlight link vdComment Comment
-    syntax region vdComment start=/^#/ end=/$/ oneline
-
-    " Parse $LS_COLORS for basic highlighting
-    for s:entry in split($LS_COLORS, ':')
-        let s:m = matchlist(s:entry, '\v^(\w+)\=([0-9;]+)$')
-        let [s:unused, s:glob, s:code; s:unused] = s:m
-
-        let s:code_list = split(s:code, ';')
-        call map(s:code_list, 'str2nr(v:val, 10)')
-
-        while !empty(s:code_list)
-            if s:code_list[0] == 1
-                let s:attr = 'bold'
-
-            elseif 30 <= s:code_list[0] && s:code_list[0] <= 37
-                let s:fg = (s:code_list[0] - 30)
-
-            elseif 40 <= s:code_list[0] && s:code_list[0] <= 47
-                let s:bg = (s:code_list[0] - 40)
-
-            elseif s:code_list[0:1] == [38, 5]
-                let s:code_list = s:code_list[2:]
-                let s:fg = s:code_list[0]
-
-            elseif s:code_list[0:1] == [48, 5]
-                let s:code_list = s:code_list[2:]
-                let s:bg = s:code_list[0]
-
-            endif
-
-            call remove(s:code_list, 0)
-        endwhile
-        let s:hlgroup = 'vdHlGroup_'. s:glob
-
-        let s:cterm = exists('s:attr') ? ('cterm='. s:attr) : ''
-        let s:ctermfg = exists('s:fg') ? ('ctermfg='. string(s:fg)) : ''
-        let s:ctermbg = exists('s:bg') ? ('ctermbg='. string(s:bg)) : ''
-
-        exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
-    endfor
-
-    syntax region vdInventoryItem start=/^\v[+*@]?\d+/ end=/$/ oneline
-
-    highlight link vdIII Number
-    syntax match vdIII /\v(^\D?)@<=\zs(\d+)\ze\t/ containedin=VdInventoryItem
-
-    syntax match vdHlGroup_di /\v(^\D?\d+1\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-    syntax match vdHlGroup_ex /\v(^\D?\d+2\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-    syntax match vdHlGroup_ln /\v(^\D?\d+3\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-    syntax match vdHlGroup_pi /\v(^\D?\d+4\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-
-    highlight vdHlGroup_err ctermfg=black ctermbg=red
-    syntax match vdHlGroup_err /\v(^\D?\d+9\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-
-endif
-
-finish
-'''
-
-
 # Mandatary
 #TODO: Rethink about folder and files
 
@@ -126,6 +37,11 @@ import unicodedata
 
 from pathlib import Path
 
+from . import regex
+from . import logger
+
+from .paints import *
+
 
 # =============================================================================
 # Global variables {
@@ -146,138 +62,8 @@ VD_VIMRC_PATH = Path.home() / '.config' / 'vd' / 'vd2.vimrc'
 # Generalized Utilities {
 # -----------------------------------------------------------------------------
 
-class RegexCache:
-    def __init__(self, text):
-        self.text = text
-        self.m = None
-
-    def match(self, regex):
-        self.m = re.match(regex, self.text)
-        return self.m
-
-    def group(self, *args, **kwargs):
-        return self.m.group(*args, **kwargs)
-
-    def groups(self, *args, **kwargs):
-        return self.m.groups(*args, **kwargs)
-
-
-class paint:
-    def __init__(self, color_code):
-        self.escape_seq = f'\033[{color_code}m'
-
-    def __call__(self, s):
-        return f'{self.escape_seq}{s}\033[m'
-
-    def __str__(self):
-        return self.escape_seq
-
-black = paint('38;2;22;22;29') # eigengrau, or brain gray
-red = paint('31')
-green = paint('32')
-yellow = paint('33')
-blue = paint('34')
-magenta = paint('35')
-cyan = paint('36')
-white = paint('37')
-
-red_bg = paint('41')
-green_bg = paint('42')
-yellow_bg = paint('30;43')
-blue_bg = paint('44')
-magenta_bg = paint('45')
-cyan_bg = paint('46')
-white_bg = paint('47')
-nocolor = paint('')
-
-orange = paint('38;2;160;90;0')
-orange_bg = paint('30;48;2;160;90;0')
-
 RLB = red('[')
 RRB = red(']')
-
-
-decolor_regex = re.compile('\033' + r'\[[\d;]*m')
-def decolor(s):
-    return decolor_regex.sub('', s)
-
-
-class Logger:
-    pass
-
-logger = Logger()
-
-
-def print_cmd(cmd, print_func=print):
-    tokens = [
-            magenta('$'),
-            cyan(cmd[0]),
-            ]
-
-    for arg in cmd[1:]:
-        qarg = shlex.quote(arg)
-        if qarg.startswith(("'", '"')):
-            qcolor = orange
-        else:
-            qcolor = nocolor
-
-        tokens.append(qcolor(qarg))
-
-    print_func(' '.join(tokens))
-
-
-def print_stderr(*args, **kwargs):
-    kwargs['file'] = sys.stderr
-    print(*args, **kwargs)
-
-
-def print_msg(tag, print_func, *args, **kwargs):
-    with io.StringIO() as buffer:
-        kwargs['end'] = ''
-        print(*args, file=buffer, **kwargs)
-
-        for line in buffer.getvalue().split('\n'):
-            print_func(tag, line.rstrip('\n'))
-
-
-def debug(*args, **kwargs):
-    if options.debug:
-
-        if not args and not kwargs:
-            print()
-            return
-
-        print_msg(magenta('[Debug]'), print_stderr, *args, **kwargs)
-
-
-def info(*args, **kwargs):
-    print_msg(cyan('[Info]'), print, *args, **kwargs)
-
-
-def warning(*args, **kwargs):
-    print_msg(yellow('[Warning]'), print_stderr, *args, **kwargs)
-
-
-
-error_lines = []
-def errorq(*args, **kwargs):
-    error_lines.append((args, kwargs))
-
-
-def errorflush():
-    for a, ka in error_lines:
-        print_msg(red('[Error]'), print_stderr, *a, **ka)
-
-    error_lines.clear()
-
-
-def error(*args, **kwargs):
-    errorflush()
-    print_msg(red('[Error]'), print_stderr, *args, **kwargs)
-
-
-def has_error():
-    return bool(error_lines)
 
 
 def FUNC_LINE():
@@ -287,7 +73,7 @@ def FUNC_LINE():
 
 
 def str_width(s):
-    return sum(1 + (unicodedata.east_asian_width(c) in 'WF') for c in decolor(s))
+    return sum(1 + (unicodedata.east_asian_width(c) in 'WF') for c in paints.decolor(s))
 
 
 def shrinkuser(path):
@@ -742,7 +528,7 @@ def hint_text():
 # -----------------------------------------------------------------------------
 
 def step_vim_edit_inventory(base, inventory):
-    debug(FUNC_LINE())
+    logger.debug(FUNC_LINE())
 
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='.vd') as tf:
         # Write inventory into tempfile
@@ -779,7 +565,7 @@ def step_vim_edit_inventory(base, inventory):
         if os.path.isfile(VD_VIMRC_PATH):
             cmd += ['+source ' + str(VD_VIMRC_PATH)]
 
-        cmd += ['+source ' + __file__]
+        cmd += ['+source ' + str(Path(__file__).parent / 'vimrc')]
 
         # Set proper tabstop for my (arguably) perfect vertical separation line
         if len(inventory):
@@ -788,7 +574,7 @@ def step_vim_edit_inventory(base, inventory):
         # Move cursor to the line above first inventory item
         cmd.append('+normal }')
 
-        print_cmd(cmd, print_func=debug)
+        logger.cmd(cmd, tag='debug')
         sub.call(cmd, stdin=open('/dev/tty'))
         print()
 
@@ -802,7 +588,7 @@ def step_vim_edit_inventory(base, inventory):
                     new.append(None)
                     continue
 
-                rec = RegexCache(line)
+                rec = regex.rere(line)
 
                 if rec.match(r'^([#+*@]?) *(\d+)\t+(.*)$'):
                     mark, iii, path = rec.groups()
@@ -820,15 +606,15 @@ def step_vim_edit_inventory(base, inventory):
 
 
 def step_calculate_inventory_diff(base, new):
-    debug(FUNC_LINE())
+    logger.debug(FUNC_LINE())
 
-    debug(magenta('==== inventory (base) ===='))
+    logger.debug(magenta('==== inventory (base) ===='))
     for item in base:
-        debug(item)
-    debug(magenta('-------------------------'))
+        logger.debug(item)
+    logger.debug(magenta('-------------------------'))
     for item in new:
-        debug(item)
-    debug(magenta('==== inventory (new) ===='))
+        logger.debug(item)
+    logger.debug(magenta('==== inventory (new) ===='))
 
     class ItemMapping:
         def __init__(self, src):
@@ -854,7 +640,7 @@ def step_calculate_inventory_diff(base, new):
         if not isinstance(item, TrackingItem): #TODO: None, VDPath, VDGlob
             continue
         if item.iii not in item_mappings:
-            errorq(f'{red(item.iii)}  {item.text} {red}◄─ Invalid index{nocolor}')
+            logger.errorq(f'{red(item.iii)}  {item.text} {red}◄─ Invalid index{nocolor}')
             continue
 
         item_mappings[item.iii].add_dst(item)
@@ -867,22 +653,22 @@ def step_calculate_inventory_diff(base, new):
         if not it.dst:
             it.dst = [False]
 
-    debug()
-    debug('Mapping')
+    logger.debug()
+    logger.debug('Mapping')
     for iii, ft in item_mappings.items():
-        debug(f'{iii} [{ft.src.text}] => [{", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in ft.dst)}]')
+        logger.debug(f'{iii} [{ft.src.text}] => [{", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in ft.dst)}]')
 
-    if has_error():
-        errorflush()
+    if logger.has_error():
+        logger.errorflush()
         return (step_ask_fix_it, base, new)
 
     return (exit, 0)
 
 
 def step_ask_fix_it(base, new):
-    debug(FUNC_LINE())
+    logger.debug(FUNC_LINE())
 
-    errorflush()
+    logger.errorflush()
 
     user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
             allow_empty_input=False)
@@ -897,32 +683,32 @@ def step_ask_fix_it(base, new):
 
 
 def step_check_change_list(base, new, change_list_raw):
-    debug(FUNC_LINE())
+    logger.debug(FUNC_LINE())
     return (exit, 0)
 
 
 def step_confirm_change_list(base, new, change_list_raw):
-    debug(FUNC_LINE())
+    logger.debug(FUNC_LINE())
     return (exit, 0)
 
 
 def step_apply_change_list(base, new, change_list):
-    debug(FUNC_LINE())
+    logger.debug(FUNC_LINE())
     return (exit, 0)
 
 
 def step_expand_inventory(new):
-    debug(FUNC_LINE())
+    logger.debug(FUNC_LINE())
     return (exit, 0)
 
 
 def edit_vd_vimrc():
-    debug(FUNC_LINE())
+    logger.debug(FUNC_LINE())
 
     VD_VIMRC_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if VD_VIMRC_PATH.exists() and not VD_VIMRC_PATH.is_file():
-        error(VD_VIMRC_PATH, 'exists and it\'s not a file')
+        logger.error(VD_VIMRC_PATH, 'exists and it\'s not a file')
         return 1
 
     print(VD_VIMRC_PATH)
@@ -988,7 +774,7 @@ def main():
     args = parser.parse_args()
 
     if not sys.stdout.isatty() or not sys.stderr.isatty():
-        error('Both stdout and stderr must be tty')
+        logger.error('Both stdout and stderr must be tty')
         exit(1)
 
     if args.vimrc:
@@ -996,7 +782,7 @@ def main():
 
     # options.debug = args.debug
     options.debug = True
-    debug(FUNC_LINE(), options)
+    logger.debug(FUNC_LINE(), options)
 
     # =========================================================================
     # Collect initial targets
@@ -1029,13 +815,11 @@ def main():
         if target:
             inventory.append(TrackingItem(None, target))
 
-    has_error = False
     for item in inventory:
         if not item.exists:
-            print_path_with_prompt(error, red, 'File does not exist:', item.text)
-            has_error = True
+            logger.error('File does not exist:', item.text)
 
-    if has_error:
+    if logger.has_error():
         exit(1)
 
     if not inventory:
@@ -1073,20 +857,20 @@ def main():
             prev_call = (func, *args)
             next_call = func(*args)
         except TypeError as e:
-            errorq(e)
-            errorq(f'prev_call.func = {name(prev_call[0])}')
-            errorq(f'prev_call.args = (')
+            logger.errorq(e)
+            logger.errorq(f'prev_call.func = {name(prev_call[0])}')
+            logger.errorq(f'prev_call.args = (')
             for a in prev_call[1:]:
-                errorq(f'    {repr(a)}')
-            errorq(')')
+                logger.errorq(f'    {repr(a)}')
+            logger.errorq(')')
 
-            errorq()
-            errorq(f'next_call.func = {name(next_call[0])}')
-            errorq(f'next_call.args = (')
+            logger.errorq()
+            logger.errorq(f'next_call.func = {name(next_call[0])}')
+            logger.errorq(f'next_call.args = (')
             for a in next_call[1:]:
-                errorq(f'    {repr(a)}')
-            errorq(')')
-            errorflush()
+                logger.errorq(f'    {repr(a)}')
+            logger.errorq(')')
+            logger.errorflush()
 
             raise e
 
