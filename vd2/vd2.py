@@ -23,7 +23,6 @@ import difflib
 import functools
 import glob
 import inspect
-import io
 import os
 import os.path
 import re
@@ -372,7 +371,7 @@ def hint_text():
             ]
 
     if os.path.isfile(VD_VIMRC_PATH):
-        ret.append('# - Configure hotkeys in ~/.config/vd/vd.vimrc')
+        ret.append('# - Configure hotkeys in ' + shrinkuser(VD_VIMRC_PATH))
     else:
         ret.append('# - Setup default vd.vimrc with')
         ret.append('#   $ vd --vimrc')
@@ -403,27 +402,21 @@ def step_vim_edit_inventory(base, inventory):
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='.vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
-            def writeline(line=''):
-                f.write(line + '\n')
-
-            def writelines(lines=[]):
-                for line in lines:
-                    writeline(line)
-
-            writelines(hint_text())
-            writeline()
+            f.writelines(hint_text())
+            f.writeline()
 
             if isinstance(inventory, Inventory):
                 for item in inventory:
                     if item is None:
-                        writeline()
+                        f.writeline()
                     elif item.iii is None:
-                        writeline(f'{item.text}')
+                        f.writeline(f'{item.text}')
                     else:
-                        writeline(f'{item.iii}\t{item.text}')
+                        f.writeline(f'{item.iii}\t{item.text}')
             else:
                 for line in inventory:
-                    writeline(f'{line}')
+                    f.writeline(f'{line}')
+
             f.flush()
 
         # Invoke vim to edit item list
@@ -587,10 +580,12 @@ def edit_vd_vimrc():
         return sub.call(['vim', VD_VIMRC_PATH])
 
     # Deploy vd vimrc if user didn't have one
+    # Use tempfile so if user don't save the file, it won't exist
     with tempfile.NamedTemporaryFile() as tf:
         # Write it to a temp file first
         with open(tf.name, mode='w', encoding='utf8') as f:
-            f.write(vimrc)
+            with open(Path(__file__).parent / 'vimrc') as vimrc:
+                f.write(vimrc.read())
 
         return sub.call([
             'vim', VD_VIMRC_PATH,

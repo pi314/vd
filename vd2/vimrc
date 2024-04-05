@@ -11,7 +11,6 @@ let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:fal
 if !g:vd_disable_default_options
     " Turn off line number for not interferring with item index
     set nonu
-
     set nowrap
 endif
 

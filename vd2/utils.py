@@ -124,12 +124,18 @@ def prompt_confirm(prompt_text, options, allow_empty_input=True):
     return us
 
 
-def gen_unique_file_name(path, postfix='.vdtmp.'):
-    now = datetime.datetime.now()
-    tmp_file_name = '{orig_path}{postfix}{timestamp}[{getpid}]'.format(
-            orig_path=path.lstrip('/'),
-            postfix=postfix,
-            timestamp=now.strftime('%Y-%m-%d.%H:%M:%S.%f'),
-            getpid=os.getpid(),
-            )
-    return tmp_file_name
+_open = open
+def open(*args, **kwargs):
+    ret = _open(*args, **kwargs)
+
+    def writeline(line=''):
+        ret.write(line + '\n')
+
+    def writelines(lines=[]):
+        for line in lines:
+            writeline(line)
+
+    ret.writeline = writeline
+    ret.writelines = writelines
+
+    return ret
