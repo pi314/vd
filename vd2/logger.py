@@ -62,8 +62,12 @@ def error(*args, **kwargs):
     log('error', *args, **kwargs)
 
 
+def errorclear():
+    _has_err = False
+
+
 def has_error():
-    return bool(_has_err)
+    return _has_err
 
 
 def cmd(c, tag=None, **kwargs):
