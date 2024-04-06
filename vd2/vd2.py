@@ -40,6 +40,8 @@ from . import logger
 
 from .paints import *
 from .utils import *
+from .inventory import *
+from .actions import *
 
 
 # =============================================================================
@@ -92,256 +94,6 @@ class UnknownPathError(Exception):
     pass
 
 class WTF(Exception):
-    pass
-
-
-class VDGlob:
-    def __init__(self, text):
-        self.txt = os.path.expanduser(text)
-
-    def __repr__(self):
-        return f'VDGlob({self.text})'
-
-    @property
-    def text(self):
-        return shrinkuser(self.txt)
-
-    def glob(self):
-        ret = glob.glob(self.txt, recursive=True)
-        return fsorted(ret)
-
-
-class VDPath:
-    def __init__(self, text):
-        self.txt = text
-        self.path = Path(text).expanduser()
-
-    def __repr__(self):
-        return f'VDPath({self.text})'
-
-    def __eq__(self, other):
-        return self.text == other.text
-
-    @property
-    def text(self):
-        if not self.txt:
-            return '.'
-
-        ret = self.txt.rstrip('/')
-
-        # Add postfix to display text
-        if self.isdir and not self.txt.endswith('*'):
-            ret += '/'
-
-        return shrinkuser(ret)
-
-    def __eq__(self, other):
-        return self.text == other.text
-
-    @property
-    def inode(self):
-        if self.exists:
-            return self.path.stat(follow_symlinks=False).st_ino
-
-    @property
-    def realpath(self):
-        if self.islink:
-            return str(self.path.parent.resolve() / self.path.name)
-
-        return str(self.path.resolve())
-
-    @property
-    def exists(self):
-        return self.path.exists() or self.islink
-
-    @property
-    def isdir(self):
-        return self.path.is_dir() and not self.islink
-
-    @property
-    def isfile(self):
-        return self.path.is_file() and not self.islink
-
-    @property
-    def isfifo(self):
-        return self.path.is_fifo() and not self.islink
-
-    @property
-    def isexecutable(self):
-        return os.access(self.path, os.X_OK)
-
-    @property
-    def islink(self):
-        return self.path.is_symlink()
-
-    def listdir(self, include_hidden):
-        if not self.exists:
-            return []
-
-        if not self.isdir:
-            return ['.'] if not self.txt else [self.text]
-
-        ret = []
-
-        children = fsorted(p.name for p in self.path.iterdir())
-        for child in children:
-            if child.startswith('.') and not include_hidden:
-                continue
-
-            ret.append(child if not self.txt
-                    else os.path.join(self.text, child)
-                    )
-
-        if not ret:
-            ret = ['.'] if not self.txt else [self.text]
-
-        return ret
-
-
-class TrackingItem:
-    def __init__(self, iii, text, mark=None):
-        # III = Inventory Item Index
-        self.iii = iii
-
-        if not mark or not isinstance(mark, str) or mark not in '#*+@':
-            self.mark = '.'
-        else:
-            self.mark = mark
-
-        self.path = VDPath(text)
-
-    def __repr__(self):
-        return f'{self.mark.ljust(1)} {self.iii} [{self.text}]'
-
-    def __getattr__(self, attr):
-        if hasattr(self.path, attr):
-            return getattr(self.path, attr)
-
-    @property
-    def type(self):
-        if not self.exists:
-            return 9
-        if self.isdir:
-            return 1
-        if self.isfile and self.isexecutable:
-            return 2
-        if self.islink:
-            return 3
-        if self.isfifo:
-            return 4
-        return 0
-
-
-class Inventory:
-    def __init__(self):
-        self.content = []
-
-    def __len__(self):
-        return len(self.content)
-
-    def __iter__(self):
-        return iter(self.content)
-
-    def __getitem__(self, index):
-        return self.content[index]
-
-    def __eq__(self, other):
-        if not isinstance(other, Inventory):
-            return False
-
-        return self.content == other.content
-
-    def append(self, text, iii=None, mark=None):
-        if text is None:
-            if (self.content or [None])[-1] is not None:
-                self.content.append(None)
-
-        elif isinstance(text, TrackingItem):
-            self.content.append(text)
-
-        elif iii is not None:
-            self.content.append(TrackingItem(int(iii, 10), text, mark=mark))
-
-        elif '*' in text.replace('[*]', '_'):
-            self.content.append(VDGlob(text))
-
-        else:
-            self.content.append(VDPath(text.replace('[*]', '*')))
-
-    def freeze(self):
-        while self.content and self.content[0] is None:
-            self.content.pop(0)
-        while self.content and self.content[-1] is None:
-            self.content.pop(-1)
-
-        path_iii_mapping = {}
-
-        offset = 10 ** (len(str(len(self.content))))
-        iii = 1
-        for item in self.content:
-            if isinstance(item, TrackingItem) and item.iii is None:
-                if item.text in path_iii_mapping:
-                    item.iii = path_iii_mapping[item.text]
-                else:
-                    item.iii = (offset + iii) * 10 + item.type
-                    path_iii_mapping[item.text] = item.iii
-                    iii += 1
-
-
-class VirtualSingleTargetOperation:
-    def __init__(self, target):
-        self.target = target
-
-    def __repr__(self):
-        return '<{} [{}]>'.format(self.__class__.__name__, self.target)
-
-
-class VirtualMultiTargetOperation:
-    def __init__(self, targets):
-        self.targets = targets
-
-    def __repr__(self):
-        return '<{} {}>'.format(
-                self.__class__.__name__,
-                ','.join('[' + t + ']' for t in self.targets))
-
-
-class TrackOperation(VirtualSingleTargetOperation):
-    pass
-
-
-class ResolveLinkOperation(VirtualSingleTargetOperation):
-    def __init__(self, target):
-        super().__init__(target)
-        self.resolve_to = os.readlink(target)
-
-
-class UntrackOperation(VirtualSingleTargetOperation):
-    pass
-
-
-class DeleteOperation(VirtualSingleTargetOperation):
-    pass
-
-
-class RenameOperation(VirtualMultiTargetOperation):
-    def __init__(self, src, dst):
-        super().__init__((src, dst))
-
-    @property
-    def src(self):
-        return self.targets[0]
-
-    @property
-    def dst(self):
-        return self.targets[1]
-
-
-class DominoRenameOperation(VirtualMultiTargetOperation):
-    pass
-
-
-class RotateRenameOperation(VirtualMultiTargetOperation):
     pass
 
 # -----------------------------------------------------------------------------
@@ -444,9 +196,7 @@ def step_vim_edit_inventory(base, inventory):
         # Parse tempfile content
         new = Inventory()
         with open(tf.name, mode='r', encoding='utf8') as f:
-            for line in f:
-                line = line.rstrip('\n')
-
+            for line in f.readlines():
                 if not line:
                     new.append(None)
                     continue
@@ -479,47 +229,55 @@ def step_calculate_inventory_diff(base, new):
         logger.debug(item)
     logger.debug(magenta('==== inventory (new) ===='))
 
-    class ItemMapping:
-        def __init__(self, src):
-            self.src = src
-            self.dst = []
-
-        def add_dst(self, dst):
-            if dst.mark == '#':
-                self.dst.append(None)
-            else:
-                self.dst.append(dst)
-
-    item_mappings = dict()
+    item_changes = dict()
+    item_new = []
 
     # Put items from base inventory into item mapping
     for item in base:
         if not isinstance(item, TrackingItem):
+            item_new.append(item)
             continue
-        item_mappings[item.iii] = ItemMapping(item)
+
+        item_changes[item.iii] = ItemChange(item)
 
     # Attach items from new inventory into item mapping
     for item in new:
-        if not isinstance(item, TrackingItem): #TODO: None, VDPath, VDGlob
-            continue
-        if item.iii not in item_mappings:
-            logger.errorq(f'{red(item.iii)}  {item.text} {red}◄─ Invalid index{nocolor}')
+        if item is None:
             continue
 
-        item_mappings[item.iii].add_dst(item)
+        if not isinstance(item, TrackingItem):
+            item_new.append(item)
+            continue
 
-    # Filter out none-changed items
-    for iii, it in list(item_mappings.items()):
-        if [it.src.text] == [dst.text for dst in it.dst if dst is not None]:
-            del item_mappings[iii]
+        if item.iii not in item_changes:
+            logger.errorq('{iii}  {text} {red}◄─ Invalid index{nocolor}'.format(
+                iii=red(item.iii),
+                text=item.text,
+                red=red,
+                nocolor=nocolor,
+                ))
+            continue
 
-        if not it.dst:
-            it.dst = [False]
+        item_changes[item.iii].append(item)
 
     logger.debug()
     logger.debug('Mapping')
-    for iii, ft in item_mappings.items():
-        logger.debug(f'{iii} [{ft.src.text}] => [{", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in ft.dst)}]')
+    actions = []
+    for iii, change in item_changes.items():
+        if not change.changed:
+            continue
+        logger.debug(f'{iii} [{change.src.text}] => [{", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in change.dst)}]')
+
+        for action in change.to_action():
+            actions.append(action)
+
+    for item in item_new:
+        logger.debug(f'track [{item.text}]')
+        actions.append(TrackAction(item.text))
+
+    logger.debug()
+    for action in actions:
+        logger.debug(action)
 
     if logger.has_error():
         logger.errorflush()
@@ -699,12 +457,12 @@ def main():
     # 1. Construct the stage: inventory => (seq num, tab, ./file/path/)
     # 2. Invoke vim with current stage content
     # 3. Parse and get new stage content
-    # 4. Compare new/old stage content and generate OP list
+    # 4. Compare new/old stage content and generate action list
     # 5. Confirm with user
     # 5.q. if user say "q" (quit), quit
     # 5.e. if user say "e" (edit), invoke vim with new stage content
     # 5.r. if user say "r" (redo), invoke vim with old stage content
-    # 5.y. if user say "y" (yes) or enter, apply the OP list
+    # 5.y. if user say "y" (yes) or enter, apply the action list
     # 5.*. keep asking until recognized option is selected or Ctrl-C is pressed
     # -------------------------------------------------------------------------
 

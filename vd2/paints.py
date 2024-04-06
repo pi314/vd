@@ -22,7 +22,7 @@ class paint:
         return s if not self.seq else f'{self.seq}{s}\033[m'
 
     def __str__(self):
-        return self.seq
+        return self.seq or '\033[m'
 
     def __or__(self, other):
         fg = self.fg if other.fg is None else other.fg

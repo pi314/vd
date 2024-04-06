@@ -126,16 +126,23 @@ def prompt_confirm(prompt_text, options, allow_empty_input=True):
 
 _open = open
 def open(*args, **kwargs):
-    ret = _open(*args, **kwargs)
+    f = _open(*args, **kwargs)
 
     def writeline(line=''):
-        ret.write(line + '\n')
+        f.write(line + '\n')
 
     def writelines(lines=[]):
         for line in lines:
             writeline(line)
 
-    ret.writeline = writeline
-    ret.writelines = writelines
+    def readlines():
+        lines = []
+        for line in f:
+            lines.append(line.rstrip('\n'))
+        return lines
 
-    return ret
+    f.writeline = writeline
+    f.writelines = writelines
+    f.readlines = readlines
+
+    return f
