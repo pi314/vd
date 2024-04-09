@@ -45,6 +45,7 @@ def warning(*args, **kwargs):
 _error_lines = []
 _has_err = False
 def errorq(*args, **kwargs):
+    global _has_err
     _has_err = True
     _error_lines.append((args, kwargs))
 
@@ -57,6 +58,7 @@ def errorflush():
 
 
 def error(*args, **kwargs):
+    global _has_err
     _has_err = True
     errorflush()
     log('error', *args, **kwargs)

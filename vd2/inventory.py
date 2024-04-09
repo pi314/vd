@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .utils import *
 from .actions import *
+from .errors import *
 
 
 class VDGlob:
@@ -208,39 +209,11 @@ class Inventory:
 class ItemChange:
     def __init__(self, src):
         self.src = src
-        self.dst = [False]
+        self.dst = []
 
     def append(self, dst):
-        if self.dst == [False]:
-            self.dst = []
-
-        if dst.mark == '#':
-            self.dst.append(None)
-        else:
-            self.dst.append(dst)
+        self.dst.append(dst)
 
     @property
     def changed(self):
         return [self.src] != self.dst
-
-    def to_action(self):
-        if not self.dst:
-            return []
-
-        # delete
-        if self.dst == [False]:
-            return [DeleteAction(self.src.text)]
-
-        # untrack
-        if self.dst == [None]:
-            return [UntrackAction(self.src.text)]
-
-        ret = []
-        for dst in self.dst:
-            if dst.mark == '+':
-                ret.append(GlobAction(self.src.text))
-            elif dst.mark == '*':
-                ret.append(GlobAllAction(self.src.text))
-            else:
-                ret.append(RenameAction(self.src.text, dst.text))
-        return ret

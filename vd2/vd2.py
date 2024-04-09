@@ -78,29 +78,6 @@ def FUNC_LINE():
 
 
 # =============================================================================
-# Containers {
-# -----------------------------------------------------------------------------
-
-class InvalidIiiError(Exception):
-    pass
-
-class DuplicatedIiiError(Exception):
-    pass
-
-class ConflictedPathError(Exception):
-    pass
-
-class UnknownPathError(Exception):
-    pass
-
-class WTF(Exception):
-    pass
-
-# -----------------------------------------------------------------------------
-# Containers }
-# =============================================================================
-
-# =============================================================================
 # Specialized Utilities {
 # -----------------------------------------------------------------------------
 
@@ -230,12 +207,12 @@ def step_calculate_inventory_diff(base, new):
     logger.debug(magenta('==== inventory (new) ===='))
 
     item_changes = dict()
-    item_new = []
+    item_added = []
 
     # Put items from base inventory into item mapping
     for item in base:
         if not isinstance(item, TrackingItem):
-            item_new.append(item)
+            item_added.append(item)
             continue
 
         item_changes[item.iii] = ItemChange(item)
@@ -246,7 +223,7 @@ def step_calculate_inventory_diff(base, new):
             continue
 
         if not isinstance(item, TrackingItem):
-            item_new.append(item)
+            item_added.append(item)
             continue
 
         if item.iii not in item_changes:
@@ -260,18 +237,68 @@ def step_calculate_inventory_diff(base, new):
 
         item_changes[item.iii].append(item)
 
+    return (step_compile_inventory_diff, base, new, item_changes, item_added)
+
+
+def step_compile_inventory_diff(base, new, item_changes, item_added):
     logger.debug()
     logger.debug('Mapping')
     actions = []
     for iii, change in item_changes.items():
         if not change.changed:
             continue
-        logger.debug(f'{iii} [{change.src.text}] => [{", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in change.dst)}]')
+        logger.debug('{iii} [{src}] => [{dsts}]'.format(
+            iii=iii,
+            src=change.src.text,
+            dsts=", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in change.dst)
+            ))
 
-        for action in change.to_action():
-            actions.append(action)
+        if not change.dst:
+            actions.append(DeleteAction(change.src.text))
+            continue
 
-    for item in item_new:
+        raw_actions = []
+        for dst in change.dst:
+            if dst.mark == '#':
+                raw_actions.append(UntrackAction(change.src.text))
+            elif dst.mark == '+':
+                raw_actions.append(GlobAction(change.src.text))
+            elif dst.mark == '*':
+                raw_actions.append(GlobAllAction(change.src.text))
+            elif dst.mark == '@':
+                raw_actions.append(ResolveLinkAction(change.src.text))
+            else:
+                raw_actions.append(CopyAction(change.src.text, dst.text))
+
+        if len(set(isinstance(action, MetaAction) for action in raw_actions)) != 1:
+            logger.error('Meta changes could not be used with FS changes.')
+            logger.error('Conflicted change:')
+            logger.error('base:')
+            logger.error(' ', change.src)
+            logger.error('new:')
+            for dst in change.dst:
+                logger.error(' ', dst)
+            logger.error()
+
+        # merge fs actions
+        contains = False
+        fs_actions = [action for action in raw_actions if not isinstance(action, MetaAction)]
+        for action in fs_actions:
+            if action.src == action.dst:
+                contains = True
+
+        if contains:
+            # All actions are CopyAction
+            for action in fs_actions:
+                if action.src != action.dst:
+                    actions.append(action)
+        else:
+            # RenameAction + CopyActions
+            for action in fs_actions[:-1]:
+                actions.append(action)
+            actions.append(RenameAction(change.src, fs_actions[-1].dst))
+
+    for item in item_added:
         logger.debug(f'track [{item.text}]')
         actions.append(TrackAction(item.text))
 
@@ -281,9 +308,23 @@ def step_calculate_inventory_diff(base, new):
 
     if logger.has_error():
         logger.errorflush()
-        return (step_ask_fix_it, base, new)
+        return (exit, 1)
 
-    return (exit, 0)
+    return (exit, 1)
+    # return (step_merge_actions, base, new, actions)
+
+
+# def step_merge_actions(base, new, actions):
+#     logger.debug()
+#     logger.debug(FUNC_LINE())
+#     for action in actions:
+#         logger.debug(action)
+#
+#     if logger.has_error():
+#         logger.errorflush()
+#         return (step_ask_fix_it, base, new)
+#
+#     return (exit, 1)
 
 
 def step_ask_fix_it(base, new):
