@@ -293,10 +293,12 @@ def step_compile_inventory_diff(base, new, item_changes, item_added):
                 if action.src != action.dst:
                     actions.append(action)
         else:
-            # RenameAction + CopyActions
-            for action in fs_actions[:-1]:
-                actions.append(action)
-            actions.append(RenameAction(change.src, fs_actions[-1].dst))
+            for idx, action in enumerate(fs_actions):
+                logger.debug(change.dst)
+                if idx == len(fs_actions) - 1:
+                    actions.append(RenameAction(action.src, action.dst))
+                else:
+                    actions.append(action)
 
     for item in item_added:
         logger.debug(f'track [{item.text}]')
