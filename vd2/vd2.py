@@ -377,9 +377,20 @@ def step_confirm_change_list(base, new, change_list_raw):
 
 def step_apply_change_list(base, new, change_list):
     logger.debug(FUNC_LINE())
+    has_error = False
+
     for change in change_list:
+        if has_error:
+            logger.info(change)
+            continue
+
         if hasattr(change, 'apply'):
-            change.apply()
+            ret = change.apply()
+            if ret is False:
+                logger.error('Action failed')
+                logger.info()
+                logger.info('Skipped:')
+                has_error = True
 
     return (exit, 0)
 

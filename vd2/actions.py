@@ -63,7 +63,7 @@ class DeleteAction(FSAction):
                 logger.cmd(['rm', '-r', path])
                 shutil.rmtree(path)
         except:
-            return
+            return False
 
         try:
             cwd = Path.cwd().resolve()
@@ -76,7 +76,7 @@ class DeleteAction(FSAction):
 
                 if probe == cwd:
                     # dont delete cwd
-                    return
+                    return True
 
                 if not probe.is_dir():
                     # something weird happen
@@ -84,7 +84,7 @@ class DeleteAction(FSAction):
 
                 for child in probe.iterdir():
                     # if probe/ is not empty, return
-                    return
+                    return True
 
                 # probe/ is empty, delete it
                 probe.rmdir()
@@ -94,7 +94,17 @@ class DeleteAction(FSAction):
 
 
 class RenameAction(FSAction):
-    pass
+    def apply(self):
+        src = Path(self.src)
+        dst = Path(self.dst)
+        try:
+            logger.cmd(['mkdir', '-p', dst.parent])
+            dst.parent.mkdir(parents=True, exist_ok=True)
+
+            logger.cmd(['mv', src, dst])
+            src.rename(dst)
+        except:
+            return False
 
 
 class CopyAction(FSAction):
