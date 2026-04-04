@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[project]
+name = "vd2"
+dynamic = ["version"]
+authors = [
+  { name="Cychih", email="michael66230@gmail.com" },
+]
+description = "My Python implementation of vidir"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: BSD License",
+    "Natural Language :: English",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+
+
+[tool.hatch.version]
+path = "vd2/__init__.py"
+
+
+[project.scripts]
+vd2 = "vd2:main"
+
+
+[project.urls]
+Homepage = "https://github.com/pi314/vd"
+
+
+[tool.coverage.run]
+branch = true
+source = ["vd2/"]
+command_line = "-m unittest --verbose"
+
+
+[tool.coverage.report]
+omit = [
+    "test_*.py",
+    "__init__.py",
+    "__main__.py",
+    ]
