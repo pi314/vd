@@ -108,7 +108,17 @@ class RenameAction(FSAction):
 
 
 class CopyAction(FSAction):
-    pass
+    def apply(self):
+        src = Path(self.src)
+        dst = Path(self.dst)
+        try:
+            logger.cmd(['mkdir', '-p', dst.parent])
+            dst.parent.mkdir(parents=True, exist_ok=True)
+
+            logger.cmd(['cp', src, dst])
+            src.copy(dst, follow_symlinks=False)
+        except:
+            return False
 
 
 class DominoRenameAction(FSAction):
