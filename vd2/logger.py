@@ -79,7 +79,7 @@ def cmd(c, tag=None, **kwargs):
             ]
 
     for arg in c[1:]:
-        qarg = shlex.quote(arg)
+        qarg = shlex.quote(str(arg))
         if qarg.startswith(("'", '"')):
             qcolor = orange
         else:

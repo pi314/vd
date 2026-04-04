@@ -1,3 +1,10 @@
+import shutil
+
+from pathlib import Path
+
+from . import logger
+
+
 class VirtualAction:
     def __init__(self, *targets):
         self.targets = targets
@@ -46,7 +53,44 @@ class GlobAllAction(MetaAction):
 
 
 class DeleteAction(FSAction):
-    pass
+    def apply(self):
+        path = Path(self.src)
+        try:
+            if not path.is_dir() or path.is_symlink():
+                logger.cmd(['rm', path])
+                path.unlink()
+            else:
+                logger.cmd(['rm', '-r', path])
+                shutil.rmtree(path)
+        except:
+            return
+
+        try:
+            cwd = Path.cwd().resolve()
+            for probe in Path(self.src).resolve().parents:
+                # Delete .DS_Store if present
+                try:
+                    (probe / '.DS_Store').unlink()
+                except:
+                    pass
+
+                if probe == cwd:
+                    # dont delete cwd
+                    return
+
+                if not probe.is_dir():
+                    # something weird happen
+                    return
+
+                for child in probe.iterdir():
+                    # if probe/ is not empty, return
+                    return
+
+                # probe/ is empty, delete it
+                probe.rmdir()
+
+        except:
+            return
 
 
 class RenameAction(FSAction):

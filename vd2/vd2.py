@@ -312,8 +312,11 @@ def step_compile_inventory_diff(base, new, item_changes, item_added):
         logger.errorflush()
         return (exit, 1)
 
-    return (exit, 1)
-    # return (step_merge_actions, base, new, actions)
+    if not actions:
+        logger.info('No change')
+        return (exit, 0)
+
+    return (step_confirm_change_list, base, new, actions)
 
 
 # def step_merge_actions(base, new, actions):
@@ -353,11 +356,31 @@ def step_check_change_list(base, new, change_list_raw):
 
 def step_confirm_change_list(base, new, change_list_raw):
     logger.debug(FUNC_LINE())
-    return (exit, 0)
+
+    user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
+
+    if user_confirm == 'yes':
+        return (step_apply_change_list, base, new, change_list_raw)
+
+    if user_confirm == 'edit':
+        return (step_vim_edit_inventory, base, new)
+
+    if user_confirm == 'redo':
+        return (step_vim_edit_inventory, base, base)
+
+    if user_confirm == 'quit':
+        return (exit, 0)
+
+    logger.error(FUNC_LINE())
+    return (exit, 1)
 
 
 def step_apply_change_list(base, new, change_list):
     logger.debug(FUNC_LINE())
+    for change in change_list:
+        if hasattr(change, 'apply'):
+            change.apply()
+
     return (exit, 0)
 
 
