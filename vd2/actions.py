@@ -98,8 +98,9 @@ class RenameAction(FSAction):
         src = Path(self.src)
         dst = Path(self.dst)
         try:
-            logger.cmd(['mkdir', '-p', dst.parent])
-            dst.parent.mkdir(parents=True, exist_ok=True)
+            if not dst.parent.exists():
+                logger.cmd(['mkdir', '-p', dst.parent])
+                dst.parent.mkdir(parents=True, exist_ok=True)
 
             logger.cmd(['mv', src, dst])
             src.rename(dst)
@@ -112,8 +113,9 @@ class CopyAction(FSAction):
         src = Path(self.src)
         dst = Path(self.dst)
         try:
-            logger.cmd(['mkdir', '-p', dst.parent])
-            dst.parent.mkdir(parents=True, exist_ok=True)
+            if not dst.parent.exists():
+                logger.cmd(['mkdir', '-p', dst.parent])
+                dst.parent.mkdir(parents=True, exist_ok=True)
 
             logger.cmd(['cp', src, dst])
             src.copy(dst, follow_symlinks=False)
