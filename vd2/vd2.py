@@ -192,10 +192,10 @@ def step_vim_edit_inventory(base, inventory):
 
         new.freeze()
 
-    return (step_calculate_inventory_diff, base, new)
+    return (step_collect_inventory_diff, base, new)
 
 
-def step_calculate_inventory_diff(base, new):
+def step_collect_inventory_diff(base, new):
     logger.debug(FUNC_LINE())
 
     logger.debug(magenta('==== inventory (base) ===='))
@@ -237,10 +237,10 @@ def step_calculate_inventory_diff(base, new):
 
         item_changes[item.iii].append(item)
 
-    return (step_compile_inventory_diff, base, new, item_changes, item_added)
+    return (step_collect_actions, base, new, item_changes, item_added)
 
 
-def step_compile_inventory_diff(base, new, item_changes, item_added):
+def step_collect_actions(base, new, item_changes, item_added):
     logger.debug()
     logger.debug('Mapping')
     actions = []
@@ -249,56 +249,25 @@ def step_compile_inventory_diff(base, new, item_changes, item_added):
             continue
         logger.debug('{iii} [{src}] => [{dsts}]'.format(
             iii=iii,
-            src=change.src.text,
-            dsts=", ".join(repr(i) if not isinstance(i, TrackingItem) else i.text for i in change.dst)
+            src=repr(change.src),
+            dsts=', '.join(repr(i) if not isinstance(i, TrackingItem) else repr(i) for i in change.dst)
             ))
 
         if not change.dst:
             actions.append(DeleteAction(change.src.text))
             continue
 
-        raw_actions = []
         for dst in change.dst:
             if dst.mark == '#':
-                raw_actions.append(UntrackAction(change.src.text))
+                actions.append(UntrackAction(change.src.text))
             elif dst.mark == '+':
-                raw_actions.append(GlobAction(change.src.text))
+                actions.append(GlobAction(change.src.text))
             elif dst.mark == '*':
-                raw_actions.append(GlobAllAction(change.src.text))
+                actions.append(GlobAllAction(change.src.text))
             elif dst.mark == '@':
-                raw_actions.append(ResolveLinkAction(change.src.text))
+                actions.append(ResolveLinkAction(change.src.text))
             else:
-                raw_actions.append(CopyAction(change.src.text, dst.text))
-
-        if len(set(isinstance(action, MetaAction) for action in raw_actions)) != 1:
-            logger.error('Meta changes could not be used with FS changes.')
-            logger.error('Conflicted change:')
-            logger.error('base:')
-            logger.error(' ', change.src)
-            logger.error('new:')
-            for dst in change.dst:
-                logger.error(' ', dst)
-            logger.error()
-
-        # merge fs actions
-        contains = False
-        fs_actions = [action for action in raw_actions if not isinstance(action, MetaAction)]
-        for action in fs_actions:
-            if action.src == action.dst:
-                contains = True
-
-        if contains:
-            # All actions are CopyAction
-            for action in fs_actions:
-                if action.src != action.dst:
-                    actions.append(action)
-        else:
-            for idx, action in enumerate(fs_actions):
-                logger.debug(change.dst)
-                if idx == len(fs_actions) - 1:
-                    actions.append(RenameAction(action.src, action.dst))
-                else:
-                    actions.append(action)
+                actions.append(RenameAction(change.src.text, dst.text))
 
     for item in item_added:
         logger.debug(f'track [{item.text}]')
@@ -316,6 +285,7 @@ def step_compile_inventory_diff(base, new, item_changes, item_added):
         logger.info('No change')
         return (exit, 0)
 
+    # return (step_merge_actions, base, new, actions)
     return (step_confirm_change_list, base, new, actions)
 
 
@@ -329,7 +299,7 @@ def step_compile_inventory_diff(base, new, item_changes, item_added):
 #         logger.errorflush()
 #         return (step_ask_fix_it, base, new)
 #
-#     return (exit, 1)
+#     return (step_confirm_change_list, base, new, actions)
 
 
 def step_ask_fix_it(base, new):
