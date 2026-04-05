@@ -442,16 +442,12 @@ def edit_vd_vimrc():
 def main():
     parser = argparse.ArgumentParser(
         prog='vd',
-        description='\n'.join((
-            '# ======================================= #',
-            '# A modern Python implementation of vidir #',
-            '# ======================================= #',
-            )),
+        description='An (arguably) better vidir',
         epilog='\n'.join((
-            'examples:',
-            '  $ vd',
-            '  $ vd -a',
-            '  $ find . -type f | vd',
+            'Examples:',
+            magenta('$') + ' vd',
+            magenta('$') + ' vd -a',
+            magenta('$') + ' find . -type f | vd',
             )),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         )
