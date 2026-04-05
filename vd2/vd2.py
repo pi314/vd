@@ -242,6 +242,7 @@ def step_collect_inventory_diff(base, new):
 
 def step_collect_actions(base, new, item_changes, item_added):
     logger.debug()
+    logger.debug(FUNC_LINE())
     logger.debug('Mapping')
     actions = []
     for iii, change in item_changes.items():
@@ -324,13 +325,20 @@ def step_check_change_list(base, new, change_list_raw):
     return (exit, 0)
 
 
-def step_confirm_change_list(base, new, change_list_raw):
+def step_confirm_change_list(base, new, action_list):
+    logger.debug()
     logger.debug(FUNC_LINE())
+
+    for action in action_list:
+        if hasattr(action, 'preview'):
+            action.preview()
+        else:
+            logger.debug(repr(action))
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
 
     if user_confirm == 'yes':
-        return (step_apply_change_list, base, new, change_list_raw)
+        return (step_apply_change_list, base, new, action_list)
 
     if user_confirm == 'edit':
         return (step_vim_edit_inventory, base, new)
@@ -345,11 +353,11 @@ def step_confirm_change_list(base, new, change_list_raw):
     return (exit, 1)
 
 
-def step_apply_change_list(base, new, change_list):
+def step_apply_change_list(base, new, action_list):
     logger.debug(FUNC_LINE())
     has_error = False
 
-    for change in change_list:
+    for change in action_list:
         if has_error:
             logger.info(change)
             continue

@@ -4,6 +4,8 @@ from pathlib import Path
 
 from . import logger
 
+from .paints import *
+
 
 class VirtualAction:
     def __init__(self, *targets):
@@ -53,6 +55,9 @@ class GlobAllAction(MetaAction):
 
 
 class DeleteAction(FSAction):
+    def preview(self):
+        logger.info(red('Delete:') + red('[') + self.src + red(']'))
+
     def apply(self):
         path = Path(self.src)
         try:
@@ -87,6 +92,7 @@ class DeleteAction(FSAction):
                     return True
 
                 # probe/ is empty, delete it
+                logger.cmd(['rmdir', probe])
                 probe.rmdir()
 
         except:
@@ -94,7 +100,15 @@ class DeleteAction(FSAction):
 
 
 class RenameAction(FSAction):
+    def preview(self):
+        if self.src == self.dst:
+            return
+        logger.info(yellow('Rename:') + yellow('[') + self.src + yellow(']'))
+        logger.info(yellow('└─────►') + yellow('[') + self.dst + yellow(']'))
+
     def apply(self):
+        if self.src == self.dst:
+            return
         src = Path(self.src)
         dst = Path(self.dst)
         try:
@@ -109,6 +123,10 @@ class RenameAction(FSAction):
 
 
 class CopyAction(FSAction):
+    def preview(self):
+        logger.info(yellow('Copy:') + yellow('[') + self.src + yellow(']'))
+        logger.info(yellow('└───►') + yellow('[') + self.dst + yellow(']'))
+
     def apply(self):
         src = Path(self.src)
         dst = Path(self.dst)
