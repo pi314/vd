@@ -15,9 +15,17 @@ if !g:vd_disable_default_options
 endif
 
 if !g:vd_disable_key_mappings
+    " Cursor movement
+    nnoremap ^ ^W
+    nnoremap H HW
+    nnoremap M MW
+    nnoremap L LW
+    nnoremap G GW
+
     " Rename item
     nnoremap cc ^WC
     nnoremap S ^WC
+    nnoremap I ^Wi
 endif
 
 if !g:vd_disable_syntax_highlight
