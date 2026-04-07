@@ -6,6 +6,9 @@ let g:vd_disable_default_options = get(g:, 'vd_disable_default_options', v:false
 let g:vd_disable_key_mappings = get(g:, 'vd_disable_key_mappings', v:false)
 let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:false)
 
+let g:tcomment#options = {'whitespace': 'no'}
+set commentstring=#%s
+
 " =============================================================================
 
 if !g:vd_disable_default_options
