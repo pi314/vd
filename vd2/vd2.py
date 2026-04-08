@@ -206,16 +206,15 @@ def step_collect_inventory_diff(base, new):
         logger.debug(item)
     logger.debug(magenta('==== inventory (new) ===='))
 
-    item_changes = dict()
-    item_added = []
+    delta_by_iii = {}
+    delta_by_iii[None] = []
 
     # Put items from base inventory into item mapping
     for item in base:
         if not isinstance(item, TrackingItem):
-            item_added.append(item)
-            continue
-
-        item_changes[item.iii] = ItemChange(item)
+            delta_by_iii[None].append(item)
+        else:
+            delta_by_iii[item.iii] = ItemChange(item)
 
     # Attach items from new inventory into item mapping
     for item in new:
@@ -223,10 +222,10 @@ def step_collect_inventory_diff(base, new):
             continue
 
         if not isinstance(item, TrackingItem):
-            item_added.append(item)
+            delta_by_iii[None].append(item)
             continue
 
-        if item.iii not in item_changes:
+        if item.iii not in delta_by_iii:
             logger.errorq('{iii}  {text} {red}◄─ Invalid index{nocolor}'.format(
                 iii=red(item.iii),
                 text=item.text,
@@ -235,19 +234,23 @@ def step_collect_inventory_diff(base, new):
                 ))
             continue
 
-        item_changes[item.iii].append(item)
+        delta_by_iii[item.iii].append(item)
 
-    return (step_collect_actions, base, new, item_changes, item_added)
+    return (step_collect_actions, base, new, delta_by_iii)
 
 
-def step_collect_actions(base, new, item_changes, item_added):
+def step_collect_actions(base, new, delta_by_iii):
     logger.debug()
     logger.debug(FUNC_LINE())
     logger.debug('Mapping')
     actions = []
-    for iii, change in item_changes.items():
+    for iii, change in delta_by_iii.items():
+        if iii is None:
+            continue
+
         if not change.changed:
             continue
+
         logger.debug('{iii} [{src}] => [{dsts}]'.format(
             iii=iii,
             src=repr(change.src),
@@ -270,7 +273,7 @@ def step_collect_actions(base, new, item_changes, item_added):
             else:
                 actions.append(RenameAction(change.src.text, dst.text))
 
-    for item in item_added:
+    for item in delta_by_iii[None]:
         logger.debug(f'track [{item.text}]')
         actions.append(TrackAction(item.text))
 

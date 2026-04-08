@@ -34,6 +34,9 @@ class VDPath:
     def __eq__(self, other):
         return type(self) == type(other) and self.text == other.text
 
+    def __hash__(self):
+        return hash(self.path)
+
     @property
     def text(self):
         if not self.txt:
@@ -48,7 +51,9 @@ class VDPath:
         return shrinkuser(ret)
 
     def __eq__(self, other):
-        return self.text == other.text
+        if isinstance(other, VDPath):
+            return self.text == other.text
+        return self.text == str(other)
 
     @property
     def inode(self):
