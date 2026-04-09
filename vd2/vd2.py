@@ -236,6 +236,10 @@ def step_collect_inventory_diff(base, new):
 
         delta_by_iii[item.iii].append(item)
 
+    if logger.has_error():
+        logger.errorflush()
+        return (step_ask_fix_it, base, new)
+
     return (step_collect_actions, base, new, delta_by_iii)
 
 
@@ -307,9 +311,11 @@ def step_collect_actions(base, new, delta_by_iii):
 
 
 def step_ask_fix_it(base, new):
+    logger.debug()
     logger.debug(FUNC_LINE())
 
     logger.errorflush()
+    logger.errorclear()
 
     user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
             allow_empty_input=False)

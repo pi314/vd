@@ -1,4 +1,5 @@
 import shlex
+import threading
 
 
 from .paints import *
@@ -43,33 +44,30 @@ def warning(*args, **kwargs):
 
 
 _error_lines = []
-_has_err = False
+_has_err = threading.Event()
 def errorq(*args, **kwargs):
-    global _has_err
-    _has_err = True
+    _has_err.set()
     _error_lines.append((args, kwargs))
 
 
 def errorflush():
     for a, ka in _error_lines:
         log('error', *a, **ka)
-
     _error_lines.clear()
 
 
 def error(*args, **kwargs):
-    global _has_err
-    _has_err = True
+    _has_err.set()
     errorflush()
     log('error', *args, **kwargs)
 
 
 def errorclear():
-    _has_err = False
+    _has_err.clear()
 
 
 def has_error():
-    return _has_err
+    return _has_err.is_set()
 
 
 def cmd(c, tag=None, **kwargs):
