@@ -109,7 +109,7 @@ def prompt_confirm(prompt_text, options, allow_empty_input=True):
 
     except KeyboardInterrupt:
         print(black('KeyboardInterrupt'))
-        exit(1)
+        sys.exit(1)
 
     except EOFError:
         print(black('^D'))

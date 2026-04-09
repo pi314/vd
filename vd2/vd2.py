@@ -138,6 +138,8 @@ def step_vim_edit_inventory(base, inventory):
                 for item in inventory:
                     if item is None:
                         f.writeline()
+                    elif isinstance(item, (VDPath, VDGlob)):
+                        f.writeline(f'{item.text}')
                     elif item.iii is None:
                         f.writeline(f'{item.text}')
                     else:
@@ -164,7 +166,7 @@ def step_vim_edit_inventory(base, inventory):
             cmd.append('+set tabstop=' + str(len(str(inventory[0].iii)) + 4))
 
         # Move cursor to the line above first inventory item
-        cmd.append('+normal }')
+        cmd.append('+normal ' + chr(0x7d))
 
         logger.cmd(cmd, tag='debug')
         sub.call(cmd, stdin=open('/dev/tty'))
@@ -192,10 +194,10 @@ def step_vim_edit_inventory(base, inventory):
 
         new.freeze()
 
-    return (step_collect_inventory_diff, base, new)
+    return (step_collect_inventory_delta, base, new)
 
 
-def step_collect_inventory_diff(base, new):
+def step_collect_inventory_delta(base, new):
     logger.debug(FUNC_LINE())
 
     logger.debug(magenta('==== inventory (base) ===='))
@@ -240,74 +242,190 @@ def step_collect_inventory_diff(base, new):
         logger.errorflush()
         return (step_ask_fix_it, base, new)
 
-    return (step_collect_actions, base, new, delta_by_iii)
+    return (step_construct_raw_actions, base, new, delta_by_iii)
 
 
-def step_collect_actions(base, new, delta_by_iii):
+def step_construct_raw_actions(base, new, delta_by_iii):
     logger.debug()
     logger.debug(FUNC_LINE())
     logger.debug('Mapping')
-    actions = []
+
+    # value: (Action(), [involved paths])
+    action_pool = []
+
+    # key: pathlib.Path
+    # value: ('op', index from action_pool)
+    delta_by_path = {}
+
+    def to_path(arg):
+        if isinstance(arg, VDPath):
+            return arg.path
+        if isinstance(arg, TrackingItem):
+            return to_path(arg.path)
+        if isinstance(arg, Path):
+            return arg
+        return Path(arg)
+
+    # Put everything from base inventory into delta_by_path by pathlib.Path()
+    for item in base:
+        if not isinstance(item, TrackingItem):
+            logger.errorq('base inventory should not have this:', item)
+            continue
+        delta_by_path[to_path(item)] = []
+
+    if logger.has_error():
+        logger.errorflush()
+        return (sys.exit, 1)
+
+    def register_action(target_list, action):
+        index = len(action_pool)
+        action_pool.append((action, []))
+
+        for tag, path in target_list:
+            if path not in delta_by_path:
+                delta_by_path[path] = []
+            delta_by_path[path].append((tag, index))
+            action_pool[-1][1].append(path)
+
+        action_pool[-1] = action_pool[-1][0], set(action_pool[-1][1])
+
+        return index
+
+    # Put newly added paths as TrackAction into delta_by_path
+    for item in delta_by_iii[None]:
+        index = register_action(
+                [('track', Path(item.text))],
+                TrackAction(item.text))
+
+    del delta_by_iii[None]
+
+    # Generate raw Actions and put dst into delta_by_path with help of delta_by_iii
     for iii, change in delta_by_iii.items():
-        if iii is None:
-            continue
-
-        if not change.changed:
-            continue
-
         logger.debug('{iii} [{src}] => [{dsts}]'.format(
             iii=iii,
             src=repr(change.src),
             dsts=', '.join(repr(i) if not isinstance(i, TrackingItem) else repr(i) for i in change.dst)
             ))
 
+        src = change.src
+
         if not change.dst:
-            actions.append(DeleteAction(change.src.text))
-            continue
+            index = register_action(
+                    [('delete', to_path(src))],
+                    DeleteAction(src.text))
 
         for dst in change.dst:
-            if dst.mark == '#':
-                actions.append(UntrackAction(change.src.text))
-            elif dst.mark == '+':
-                actions.append(GlobAction(change.src.text))
-            elif dst.mark == '*':
-                actions.append(GlobAllAction(change.src.text))
-            elif dst.mark == '@':
-                actions.append(ResolveLinkAction(change.src.text))
-            else:
-                actions.append(RenameAction(change.src.text, dst.text))
+            if dst.mark != '.' and src.text != dst.text:
+                logger.errorq('Conflict: path and mark changed at the same time:', dst)
+                continue
 
-    for item in delta_by_iii[None]:
-        logger.debug(f'track [{item.text}]')
-        actions.append(TrackAction(item.text))
+            if dst.mark in '#*+@':
+                action_cls, tag = {
+                        '#': (UntrackAction, 'untrack'),
+                        '*': (GlobAllAction, 'glob_all'),
+                        '+': (GlobAction, 'glob'),
+                        '@': (ResolveLinkAction, 'resolve'),
+                        }.get(dst.mark)
+                index = register_action(
+                        [(tag, to_path(src))],
+                        action_cls(src.text))
+
+            else:
+                index = register_action(
+                        [('from', to_path(src)),
+                         ('to', to_path(dst))],
+                        CopyAction(src.text, dst.text))
 
     logger.debug()
-    for action in actions:
+    logger.debug('action list:')
+    for action in action_pool:
         logger.debug(action)
 
     if logger.has_error():
         logger.errorflush()
-        return (exit, 1)
+        return (sys.exit, 1)
 
-    if not actions:
+    if not action_pool:
         logger.info('No change')
-        return (exit, 0)
+        return (sys.exit, 0)
 
-    # return (step_merge_actions, base, new, actions)
-    return (step_confirm_change_list, base, new, actions)
+    return (step_merge_actions, base, new, delta_by_path, action_pool)
 
 
-# def step_merge_actions(base, new, actions):
-#     logger.debug()
-#     logger.debug(FUNC_LINE())
-#     for action in actions:
-#         logger.debug(action)
-#
-#     if logger.has_error():
-#         logger.errorflush()
-#         return (step_ask_fix_it, base, new)
-#
-#     return (step_confirm_change_list, base, new, actions)
+def step_merge_actions(base, new, delta_by_path, action_pool):
+    logger.debug()
+    logger.debug(FUNC_LINE())
+
+    # dump
+    logger.debug(magenta('==== before merge ===='))
+    logger.debug('delta by path:')
+    for path, action_list in delta_by_path.items():
+        logger.debug(f'{path}: {action_list}')
+    logger.debug()
+    logger.debug('action list:')
+    for index, action in enumerate(action_pool):
+        logger.debug(index, action)
+    logger.debug(magenta('-------------------------'))
+
+    # Multi-pass action merge
+
+    # Pass 0, conflict check
+    for path, action_list in delta_by_path.items():
+        tag_list = [tag for tag, _ in action_list]
+        if tag_list.count('to') > 1:
+            logger.errorq('Conflict: multiple copy/move actions have same destination')
+            for index in set(index for tag, index in action_list if tag == 'to'):
+                if len(action_pool[index][1]) == 1:
+                    continue
+                logger.errorq(f'  {action_pool[index][0].src}')
+
+    if logger.has_error():
+        logger.errorflush()
+        return (step_ask_fix_it, base, new)
+
+    # Pass 1, cancel out from&to self
+    for path, action_list in delta_by_path.items():
+        for index in set(index for tag, index in action_list):
+            if ('from', index) in action_list and ('to', index) in action_list:
+                action_pool[index] = (None, action_pool[index][1])
+
+    # Pass 2, clean up delta_by_path from action_pool
+    for index, (action, involved) in enumerate(action_pool):
+        if action is not None:
+            continue
+
+        for path in involved:
+            delta_by_path[path] = [paction for paction in delta_by_path[path] if paction[1] != index]
+
+        for path in involved:
+            if not delta_by_path[path]:
+                del delta_by_path[path]
+
+        involved.clear()
+
+    # dump
+    logger.debug(magenta('-------------------------'))
+    logger.debug('delta by path:')
+    for path, action_list in delta_by_path.items():
+        logger.debug(f'{path}: {action_list}')
+    logger.debug()
+    logger.debug('action list:')
+    for index, action in enumerate(action_pool):
+        logger.debug(f'[{index}] {action}')
+    logger.debug(magenta('==== after merge ===='))
+
+    if logger.has_error():
+        logger.errorflush()
+        return (step_ask_fix_it, base, new)
+
+    # Drop unnecesssary info
+    action_pool = [action for action, _ in action_pool if action is not None]
+
+    if not action_pool:
+        logger.info('No change')
+        return (sys.exit, 0)
+
+    return (step_confirm_action_list, base, new, action_pool)
 
 
 def step_ask_fix_it(base, new):
@@ -326,28 +444,30 @@ def step_ask_fix_it(base, new):
     if user_confirm == 'redo':
         return (step_vim_edit_inventory, base, base)
 
-    return (exit, 1)
+    return (sys.exit, 1)
 
 
-def step_check_change_list(base, new, change_list_raw):
-    logger.debug(FUNC_LINE())
-    return (exit, 0)
-
-
-def step_confirm_change_list(base, new, action_list):
+def step_confirm_action_list(base, new, action_pool):
     logger.debug()
     logger.debug(FUNC_LINE())
 
-    for action in action_list:
+    if not action_pool:
+        logger.info('No change')
+        return (sys.exit, 0)
+
+    for action in action_pool:
         if hasattr(action, 'preview'):
             action.preview()
         else:
             logger.debug(repr(action))
 
+    logger.info('Nope, under construction')
+    return (sys.exit, 1)
+
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
 
     if user_confirm == 'yes':
-        return (step_apply_change_list, base, new, action_list)
+        return (step_apply_change_list, base, new, action_pool)
 
     if user_confirm == 'edit':
         return (step_vim_edit_inventory, base, new)
@@ -356,17 +476,18 @@ def step_confirm_change_list(base, new, action_list):
         return (step_vim_edit_inventory, base, base)
 
     if user_confirm == 'quit':
-        return (exit, 0)
+        return (sys.exit, 0)
 
     logger.error(FUNC_LINE())
-    return (exit, 1)
+    return (sys.exit, 1)
 
 
-def step_apply_change_list(base, new, action_list):
+def step_apply_change_list(base, new, action_pool):
+    logger.debug()
     logger.debug(FUNC_LINE())
     has_error = False
 
-    for change in action_list:
+    for change in action_pool:
         if has_error:
             logger.info(change)
             continue
@@ -379,15 +500,17 @@ def step_apply_change_list(base, new, action_list):
                 logger.info('Skipped:')
                 has_error = True
 
-    return (exit, 0)
+    return (sys.exit, 0)
 
 
 def step_expand_inventory(new):
+    logger.debug()
     logger.debug(FUNC_LINE())
-    return (exit, 0)
+    return (sys.exit, 0)
 
 
 def edit_vd_vimrc():
+    logger.debug()
     logger.debug(FUNC_LINE())
 
     VD_VIMRC_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -458,10 +581,10 @@ def main():
 
     if not sys.stdout.isatty() or not sys.stderr.isatty():
         logger.error('Both stdout and stderr must be tty')
-        exit(1)
+        sys.exit(1)
 
     if args.vimrc:
-        exit(edit_vd_vimrc())
+        sys.exit(edit_vd_vimrc())
 
     # options.debug = args.debug
     options.debug = True
@@ -503,11 +626,11 @@ def main():
             logger.error('File does not exist:', item.text)
 
     if logger.has_error():
-        exit(1)
+        sys.exit(1)
 
     if not inventory:
         info('No targets to edit')
-        exit(0)
+        sys.exit(0)
 
     inventory.freeze()
 
@@ -540,6 +663,11 @@ def main():
             logger.errorclear()
             prev_call = (func, *args)
             next_call = func(*args)
+
+            if logger.has_error():
+                logger.errorflush()
+                sys.exit(1)
+
         except TypeError as e:
             logger.errorq(e)
             logger.errorq(f'prev_call.func = {name(prev_call[0])}')
@@ -560,4 +688,4 @@ def main():
 
 
 if __name__ == '__main__':
-    exit(main())
+    sys.exit(main())
