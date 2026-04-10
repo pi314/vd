@@ -37,6 +37,10 @@ class TrackAction(MetaAction):
     pass
 
 
+class NoAction(MetaAction):
+    pass
+
+
 class ResolveLinkAction(MetaAction):
     pass
     # os.readlink(target)

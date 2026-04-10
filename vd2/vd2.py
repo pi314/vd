@@ -250,7 +250,7 @@ def step_construct_raw_actions(base, new, delta_by_iii):
     logger.debug(FUNC_LINE())
     logger.debug('Mapping')
 
-    # value: (Action(), [involved paths])
+    # value: (Action(), [participating paths])
     action_pool = []
 
     # key: pathlib.Path
@@ -289,11 +289,9 @@ def step_construct_raw_actions(base, new, delta_by_iii):
 
         action_pool[-1] = action_pool[-1][0], set(action_pool[-1][1])
 
-        return index
-
     # Put newly added paths as TrackAction into delta_by_path
     for item in delta_by_iii[None]:
-        index = register_action(
+        register_action(
                 [('track', Path(item.text))],
                 TrackAction(item.text))
 
@@ -310,7 +308,7 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         src = change.src
 
         if not change.dst:
-            index = register_action(
+            register_action(
                     [('delete', to_path(src))],
                     DeleteAction(src.text))
 
@@ -326,12 +324,17 @@ def step_construct_raw_actions(base, new, delta_by_iii):
                         '+': (GlobAction, 'glob'),
                         '@': (ResolveLinkAction, 'resolve'),
                         }.get(dst.mark)
-                index = register_action(
+                register_action(
                         [(tag, to_path(src))],
                         action_cls(src.text))
 
+            elif src.text == dst.text:
+                register_action(
+                        [('nop', to_path(src))],
+                        NoAction(src.text))
+
             else:
-                index = register_action(
+                register_action(
                         [('from', to_path(src)),
                          ('to', to_path(dst))],
                         CopyAction(src.text, dst.text))
@@ -356,70 +359,82 @@ def step_merge_actions(base, new, delta_by_path, action_pool):
     logger.debug()
     logger.debug(FUNC_LINE())
 
-    # dump
-    logger.debug(magenta('==== before merge ===='))
-    logger.debug('delta by path:')
-    for path, action_list in delta_by_path.items():
-        logger.debug(f'{path}: {action_list}')
-    logger.debug()
-    logger.debug('action list:')
-    for index, action in enumerate(action_pool):
-        logger.debug(index, action)
-    logger.debug(magenta('-------------------------'))
+    def dump():
+        logger.debug('delta by path:')
+        for path, action_list in delta_by_path.items():
+            logger.debug(f'{path}: {action_list}')
+        logger.debug()
+        logger.debug('action list:')
+        for index, action in enumerate(action_pool):
+            logger.debug(f'[{index}] {action}')
 
     # Multi-pass action merge
 
-    # Pass 0, conflict check
+    # Pass 0, mute NoAction from action_pool
+    action_pool = [(None if isinstance(action, NoAction) else action, participant)
+                   for action, participant in action_pool]
+
+    # dump
+    logger.debug(magenta('==== before merge ===='))
+    dump()
+    logger.debug(magenta('-------------------------'))
+
+    # Pass 1, conflict check
     for path, action_list in delta_by_path.items():
         tag_list = [tag for tag, _ in action_list]
         if tag_list.count('to') > 1:
-            logger.errorq('Conflict: multiple copy/move actions have same destination')
+            logger.errorq('Conflict: multiple copy/move into single destination')
             for index in set(index for tag, index in action_list if tag == 'to'):
-                if len(action_pool[index][1]) == 1:
-                    continue
-                logger.errorq(f'  {action_pool[index][0].src}')
+                logger.errorq(f'From: {action_pool[index][0].src}')
+            logger.errorq(f'To  : {path}')
+
+        elif (tag_list.count('nop') + tag_list.count('to')) > 1:
+            logger.errorq('Conflict: override tracking item')
+            for index in set(index for tag, index in action_list if tag == 'to'):
+                logger.errorq(f'From: {action_pool[index][0].src}')
+            logger.errorq(f'To  : {path}')
 
     if logger.has_error():
         logger.errorflush()
         return (step_ask_fix_it, base, new)
 
-    # Pass 1, cancel out from&to self
+    # Pass 2, transform (CopyAction && !NoAction) into RenameAction
     for path, action_list in delta_by_path.items():
-        for index in set(index for tag, index in action_list):
-            if ('from', index) in action_list and ('to', index) in action_list:
-                action_pool[index] = (None, action_pool[index][1])
+        tag_list = [tag for tag, _ in action_list]
+        if 'from' in tag_list and 'nop' not in tag_list:
+            for tag, index in action_list:
+                if tag == 'from' and isinstance(action_pool[index][0], CopyAction):
+                    action, participants = action_pool[index]
+                    action_pool[index] = (RenameAction(action.src, action.dst), participants)
+                    break
 
-    # Pass 2, clean up delta_by_path from action_pool
-    for index, (action, involved) in enumerate(action_pool):
+    # Pass 3, clean up delta_by_path from action_pool
+    for index, (action, participants) in enumerate(action_pool):
         if action is not None:
             continue
 
-        for path in involved:
+        for path in participants:
             delta_by_path[path] = [paction for paction in delta_by_path[path] if paction[1] != index]
 
-        for path in involved:
+        for path in participants:
             if not delta_by_path[path]:
                 del delta_by_path[path]
 
-        involved.clear()
+        participants.clear()
 
     # dump
     logger.debug(magenta('-------------------------'))
-    logger.debug('delta by path:')
-    for path, action_list in delta_by_path.items():
-        logger.debug(f'{path}: {action_list}')
-    logger.debug()
-    logger.debug('action list:')
-    for index, action in enumerate(action_pool):
-        logger.debug(f'[{index}] {action}')
+    dump()
     logger.debug(magenta('==== after merge ===='))
 
     if logger.has_error():
         logger.errorflush()
         return (step_ask_fix_it, base, new)
 
-    # Drop unnecesssary info
-    action_pool = [action for action, _ in action_pool if action is not None]
+    # Drop participant list info
+    action_pool = [action
+                   for action, _ in action_pool
+                   if action is not None]
 
     if not action_pool:
         logger.info('No change')
@@ -461,8 +476,8 @@ def step_confirm_action_list(base, new, action_pool):
         else:
             logger.debug(repr(action))
 
-    logger.info('Nope, under construction')
-    return (sys.exit, 1)
+    # logger.info('Under construction')
+    # return (sys.exit, 1)
 
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
 
