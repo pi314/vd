@@ -7,6 +7,56 @@ from . import logger
 from .paints import *
 
 
+class ActionPool:
+    def __init__(self):
+        self.by_path = {}
+        self.ticket_list = []
+
+    @property
+    def paths(self):
+        return self.by_path.keys()
+
+    def to_path(arg):
+        if isinstance(arg, VDPath):
+            return arg.path
+        if isinstance(arg, TrackingItem):
+            return to_path(arg.path)
+        if isinstance(arg, Path):
+            return arg
+        return Path(arg)
+
+    def reserve(self, path):
+        self.by_path[self.to_path(path)] = {}
+
+    def register(self, *args):
+        tag_path_list = []
+        action = None
+        for arg in args:
+            if isinstance(tuple, arg):
+                tag_path_list.append(arg)
+            else:
+                action = arg
+
+        ticket = Ticket(action)
+
+        for tag, path in tag_path_list:
+            if path not in self.by_path:
+                self.by_path[path] = {}
+            if tag not in self.by_path[path]:
+                self.by_path[path][tag] = []
+
+            self.by_path[path][tag].append(ticket)
+            ticket.participants.append(path)
+
+        self.ticket_list.append(ticket)
+
+
+class Ticket:
+    def __init__(self, action=None, *participants):
+        self.action = None
+        self.participants = participants
+
+
 class VirtualAction:
     def __init__(self, *targets):
         self.targets = targets
