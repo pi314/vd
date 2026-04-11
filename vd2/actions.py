@@ -58,6 +58,35 @@ class GlobAllAction(MetaAction):
     pass
 
 
+def trim_empty_folder(path):
+    try:
+        cwd = Path.cwd().resolve()
+        for probe in path.resolve().parents:
+            # Delete .DS_Store if present
+            try:
+                (probe / '.DS_Store').unlink()
+            except:
+                pass
+
+            if probe == cwd:
+                # dont delete cwd
+                return True
+
+            if not probe.is_dir():
+                # something weird happen
+                return
+
+            for child in probe.iterdir():
+                # if probe/ is not empty, return
+                return True
+
+            # probe/ is empty, delete it
+            logger.cmd(['rmdir', probe])
+            probe.rmdir()
+    except:
+        return
+
+
 class DeleteAction(FSAction):
     def preview(self):
         logger.info(red('Delete:') + red('[') + self.src + red(']'))
@@ -74,33 +103,7 @@ class DeleteAction(FSAction):
         except:
             return False
 
-        try:
-            cwd = Path.cwd().resolve()
-            for probe in Path(self.src).resolve().parents:
-                # Delete .DS_Store if present
-                try:
-                    (probe / '.DS_Store').unlink()
-                except:
-                    pass
-
-                if probe == cwd:
-                    # dont delete cwd
-                    return True
-
-                if not probe.is_dir():
-                    # something weird happen
-                    return
-
-                for child in probe.iterdir():
-                    # if probe/ is not empty, return
-                    return True
-
-                # probe/ is empty, delete it
-                logger.cmd(['rmdir', probe])
-                probe.rmdir()
-
-        except:
-            return
+        return trim_empty_folder(path)
 
 
 class RenameAction(FSAction):
@@ -122,6 +125,9 @@ class RenameAction(FSAction):
 
             logger.cmd(['mv', src, dst])
             src.rename(dst)
+
+            return trim_empty_folder(src)
+
         except:
             return False
 
