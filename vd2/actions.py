@@ -57,7 +57,8 @@ class TicketPool:
             self.by_path[path][tag].append(ticket)
             ticket.participants.append(path)
 
-        self.ticket_list.append(ticket)
+        if tag != 'nop':
+            self.ticket_list.append(ticket)
 
 
 class Ticket:
