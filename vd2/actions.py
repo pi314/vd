@@ -60,6 +60,21 @@ class TicketPool:
         if tag != 'nop':
             self.ticket_list.append(ticket)
 
+    def deregister(self, ticket):
+        self.ticket_list.remove(ticket)
+
+    def replace(self, old, new):
+        self.ticket_list.remove(old)
+        if new not in self.ticket_list:
+            self.ticket_list.append(new)
+
+        for path in old.participants:
+            for tag, ticket_list in self.by_path[path].items():
+                if old not in ticket_list:
+                    continue
+                ticket_list.remove(old)
+                ticket_list.append(new)
+
 
 class Ticket:
     def __init__(self, action=None, *participants):
@@ -81,6 +96,12 @@ class VirtualAction:
     @property
     def dst(self):
         return self.targets[1]
+
+    def __getitem__(self, index):
+        return self.targets[index]
+
+    def __len__(self):
+        return len(self.targets)
 
     def __repr__(self):
         return '<{} {}>'.format(
@@ -215,8 +236,49 @@ class CopyAction(FSAction):
 
 
 class DominoRenameAction(FSAction):
-    pass
+    def preview(self):
+        if len(self) == 2:
+            logger.info(yellow('Rename:') + yellow('[') + self.src + yellow(']'))
+            logger.info(yellow('└─────►') + yellow('[') + self.dst + yellow(']'))
+        else:
+            for idx, target in enumerate(self.targets):
+                logger.info(yellow('Rename:' + ('┌─' if idx == 0 else '└►')) +
+                            yellow('[') + target + yellow(']'))
+
+    def apply(self):
+        try:
+            for src, dst in list(zip(self.targets, self.targets[1:]))[::-1]:
+                src = Path(src)
+                dst = Path(dst)
+                if not dst.parent.exists():
+                    logger.cmd(['mkdir', '-p', dst.parent])
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+
+                logger.cmd(['mv', src, dst])
+                src.rename(dst)
+
+                trim_empty_folder(src)
+
+        except:
+            return False
 
 
 class RotateRenameAction(FSAction):
-    pass
+    def preview(self):
+        if len(self) == 2:
+            logger.info(yellow('Swap:┌►') + yellow('[') + self.src + yellow(']'))
+            logger.info(yellow('Swap:└►') + yellow('[') + self.dst + yellow(']'))
+        else:
+            total_len = len(self.targets)
+            for idx, target in enumerate(self.targets):
+                if idx == 0:
+                    arrow = '┌►┌─'
+                elif idx == total_len - 1:
+                    arrow = '└───'
+                else:
+                    arrow = '│ └►'
+
+                logger.info(yellow('Rotate:' + arrow) + yellow('[') + target + yellow(']'))
+
+    def apply(self):
+        ...
