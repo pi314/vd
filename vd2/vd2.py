@@ -250,12 +250,7 @@ def step_construct_raw_actions(base, new, delta_by_iii):
     logger.debug(FUNC_LINE())
     logger.debug('Mapping')
 
-    # value: (Action(), [participating paths])
-    action_pool = []
-
-    # key: pathlib.Path
-    # value: ('op', index from action_pool)
-    delta_by_path = {}
+    ticket_pool = TicketPool()
 
     def to_path(arg):
         if isinstance(arg, VDPath):
@@ -266,38 +261,26 @@ def step_construct_raw_actions(base, new, delta_by_iii):
             return arg
         return Path(arg)
 
-    # Put everything from base inventory into delta_by_path by pathlib.Path()
+    # Index everything from base inventory pathlib.Path()
     for item in base:
         if not isinstance(item, TrackingItem):
             logger.errorq('base inventory should not have this:', item)
             continue
-        delta_by_path[to_path(item)] = []
+        ticket_pool.reserve(item)
 
     if logger.has_error():
         logger.errorflush()
         return (sys.exit, 1)
 
-    def register_action(target_list, action):
-        index = len(action_pool)
-        action_pool.append((action, []))
-
-        for tag, path in target_list:
-            if path not in delta_by_path:
-                delta_by_path[path] = []
-            delta_by_path[path].append((tag, index))
-            action_pool[-1][1].append(path)
-
-        action_pool[-1] = action_pool[-1][0], set(action_pool[-1][1])
-
-    # Put newly added paths as TrackAction into delta_by_path
+    # Index newly added paths as TrackAction
     for item in delta_by_iii[None]:
-        register_action(
-                [('track', Path(item.text))],
+        ticket_pool.register(
+                ('track', Path(item.text)),
                 TrackAction(item.text))
 
     del delta_by_iii[None]
 
-    # Generate raw Actions and put dst into delta_by_path with help of delta_by_iii
+    # Index dst as raw Actions with help of delta_by_iii
     for iii, change in delta_by_iii.items():
         logger.debug('{iii} [{src}] => [{dsts}]'.format(
             iii=iii,
@@ -308,8 +291,8 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         src = change.src
 
         if not change.dst:
-            register_action(
-                    [('delete', to_path(src))],
+            ticket_pool.register(
+                    ('delete', src),
                     DeleteAction(src.text))
 
         for dst in change.dst:
@@ -324,55 +307,46 @@ def step_construct_raw_actions(base, new, delta_by_iii):
                         '+': (GlobAction, 'glob'),
                         '@': (ResolveLinkAction, 'resolve'),
                         }.get(dst.mark)
-                register_action(
-                        [(tag, to_path(src))],
+                ticket_pool.register(
+                        (tag, src),
                         action_cls(src.text))
 
             elif src.text == dst.text:
-                register_action(
-                        [('nop', to_path(src))],
+                ticket_pool.register(
+                        ('nop', to_path(src)),
                         NoAction(src.text))
 
             else:
-                register_action(
-                        [('from', to_path(src)),
-                         ('to', to_path(dst))],
+                ticket_pool.register(
+                        ('from', to_path(src)),
+                        ('to', to_path(dst)),
                         CopyAction(src.text, dst.text))
-
-    logger.debug()
-    logger.debug('action list:')
-    for action in action_pool:
-        logger.debug(action)
 
     if logger.has_error():
         logger.errorflush()
         return (sys.exit, 1)
 
-    if not action_pool:
+    if not ticket_pool:
         logger.info('No change')
         return (sys.exit, 0)
 
-    return (step_merge_actions, base, new, delta_by_path, action_pool)
+    return (step_merge_actions, base, new, ticket_pool)
 
 
-def step_merge_actions(base, new, delta_by_path, action_pool):
+def step_merge_actions(base, new, ticket_pool):
     logger.debug()
     logger.debug(FUNC_LINE())
 
     def dump():
         logger.debug('delta by path:')
-        for path, action_list in delta_by_path.items():
+        for path, action_list in ticket_pool.by_path.items():
             logger.debug(f'{path}: {action_list}')
         logger.debug()
-        logger.debug('action list:')
-        for index, action in enumerate(action_pool):
+        logger.debug('ticket list:')
+        for index, action in enumerate(ticket_pool.ticket_list):
             logger.debug(f'[{index}] {action}')
 
     # Multi-pass action merge
-
-    # Pass 0, mute NoAction from action_pool
-    action_pool = [(None if isinstance(action, NoAction) else action, participant)
-                   for action, participant in action_pool]
 
     # dump
     logger.debug(magenta('==== before merge ===='))
@@ -380,18 +354,17 @@ def step_merge_actions(base, new, delta_by_path, action_pool):
     logger.debug(magenta('-------------------------'))
 
     # Pass 1, conflict check
-    for path, action_list in delta_by_path.items():
-        tag_list = [tag for tag, _ in action_list]
-        if tag_list.count('to') > 1:
+    for path, actions in ticket_pool.by_path.items():
+        if len(actions.get('to', [])) > 1:
             logger.errorq('Conflict: multiple copy/move into single destination')
-            for index in set(index for tag, index in action_list if tag == 'to'):
-                logger.errorq(f'From: {action_pool[index][0].src}')
+            for ticket in actions['to']:
+                logger.errorq(f'From: {ticket.action.src}')
             logger.errorq(f'To  : {path}')
 
-        elif (tag_list.count('nop') + tag_list.count('to')) > 1:
+        elif (len(actions.get('nop', [])) + len(actions.get('to', []))) > 1:
             logger.errorq('Conflict: override tracking item')
-            for index in set(index for tag, index in action_list if tag == 'to'):
-                logger.errorq(f'From: {action_pool[index][0].src}')
+            for ticket in actions['to']:
+                logger.errorq(f'From: {ticket.action.src}')
             logger.errorq(f'To  : {path}')
 
     if logger.has_error():
@@ -399,28 +372,17 @@ def step_merge_actions(base, new, delta_by_path, action_pool):
         return (step_ask_fix_it, base, new)
 
     # Pass 2, transform (CopyAction && !NoAction) into RenameAction
-    for path, action_list in delta_by_path.items():
-        tag_list = [tag for tag, _ in action_list]
-        if 'from' in tag_list and 'nop' not in tag_list:
-            for tag, index in action_list:
-                if tag == 'from' and isinstance(action_pool[index][0], CopyAction):
-                    action, participants = action_pool[index]
-                    action_pool[index] = (RenameAction(action.src, action.dst), participants)
+    for path, actions in ticket_pool.by_path.items():
+        if 'from' in actions and 'nop' not in actions:
+            for ticket in actions['from']:
+                if isinstance(ticket.action, CopyAction):
+                    ticket.action = RenameAction(ticket.action.src, ticket.action.dst)
                     break
 
-    # Pass 3, clean up delta_by_path from action_pool
-    for index, (action, participants) in enumerate(action_pool):
-        if action is not None:
-            continue
-
-        for path in participants:
-            delta_by_path[path] = [paction for paction in delta_by_path[path] if paction[1] != index]
-
-        for path in participants:
-            if not delta_by_path[path]:
-                del delta_by_path[path]
-
-        participants.clear()
+    # Set NoAction to None in ticket_pool
+    for ticket in ticket_pool:
+        if isinstance(ticket.action, NoAction):
+            ticket.action = None
 
     # dump
     logger.debug(magenta('-------------------------'))
@@ -431,16 +393,7 @@ def step_merge_actions(base, new, delta_by_path, action_pool):
         logger.errorflush()
         return (step_ask_fix_it, base, new)
 
-    # Drop participant list info
-    action_pool = [action
-                   for action, _ in action_pool
-                   if action is not None]
-
-    if not action_pool:
-        logger.info('No change')
-        return (sys.exit, 0)
-
-    return (step_confirm_action_list, base, new, action_pool)
+    return (step_confirm_action_list, base, new, ticket_pool)
 
 
 def step_ask_fix_it(base, new):
@@ -462,15 +415,19 @@ def step_ask_fix_it(base, new):
     return (sys.exit, 1)
 
 
-def step_confirm_action_list(base, new, action_pool):
+def step_confirm_action_list(base, new, ticket_pool):
     logger.debug()
     logger.debug(FUNC_LINE())
 
-    if not action_pool:
+    action_list = [ticket.action
+                   for ticket in ticket_pool
+                   if ticket.action is not None]
+
+    if not action_list:
         logger.info('No change')
         return (sys.exit, 0)
 
-    for action in action_pool:
+    for action in action_list:
         if hasattr(action, 'preview'):
             action.preview()
         else:
@@ -482,7 +439,7 @@ def step_confirm_action_list(base, new, action_pool):
     user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
 
     if user_confirm == 'yes':
-        return (step_apply_change_list, base, new, action_pool)
+        return (step_apply_change_list, base, new, action_list)
 
     if user_confirm == 'edit':
         return (step_vim_edit_inventory, base, new)
@@ -497,18 +454,18 @@ def step_confirm_action_list(base, new, action_pool):
     return (sys.exit, 1)
 
 
-def step_apply_change_list(base, new, action_pool):
+def step_apply_change_list(base, new, action_list):
     logger.debug()
     logger.debug(FUNC_LINE())
     has_error = False
 
-    for change in action_pool:
+    for action in action_list:
         if has_error:
-            logger.info(change)
+            logger.info(action)
             continue
 
-        if hasattr(change, 'apply'):
-            ret = change.apply()
+        if hasattr(action, 'apply'):
+            ret = action.apply()
             if ret is False:
                 logger.error('Action failed')
                 logger.info()

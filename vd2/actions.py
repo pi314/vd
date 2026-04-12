@@ -3,11 +3,12 @@ import shutil
 from pathlib import Path
 
 from . import logger
-
+from .vdpath import *
+from .inventory import *
 from .paints import *
 
 
-class ActionPool:
+class TicketPool:
     def __init__(self):
         self.by_path = {}
         self.ticket_list = []
@@ -16,11 +17,17 @@ class ActionPool:
     def paths(self):
         return self.by_path.keys()
 
-    def to_path(arg):
+    def __bool__(self):
+        return bool(self.ticket_list)
+
+    def __iter__(self):
+        return iter(self.ticket_list)
+
+    def to_path(self, arg):
         if isinstance(arg, VDPath):
             return arg.path
         if isinstance(arg, TrackingItem):
-            return to_path(arg.path)
+            return self.to_path(arg.path)
         if isinstance(arg, Path):
             return arg
         return Path(arg)
@@ -32,7 +39,7 @@ class ActionPool:
         tag_path_list = []
         action = None
         for arg in args:
-            if isinstance(tuple, arg):
+            if isinstance(arg, tuple):
                 tag_path_list.append(arg)
             else:
                 action = arg
@@ -40,6 +47,8 @@ class ActionPool:
         ticket = Ticket(action)
 
         for tag, path in tag_path_list:
+            path = self.to_path(path)
+
             if path not in self.by_path:
                 self.by_path[path] = {}
             if tag not in self.by_path[path]:
@@ -53,8 +62,11 @@ class ActionPool:
 
 class Ticket:
     def __init__(self, action=None, *participants):
-        self.action = None
-        self.participants = participants
+        self.action = action
+        self.participants = list(participants)
+
+    def __repr__(self):
+        return f'({self.action}, {self.participants})'
 
 
 class VirtualAction:
