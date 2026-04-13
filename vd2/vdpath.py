@@ -19,7 +19,7 @@ class VDGlob:
 
     def glob(self):
         ret = glob.glob(self.txt, recursive=True)
-        return fsorted(ret)
+        return natsorted(ret)
 
 
 class VDPath:
@@ -99,7 +99,7 @@ class VDPath:
 
         ret = []
 
-        children = fsorted(p.name for p in self.path.iterdir())
+        children = natsorted(p.name for p in self.path.iterdir())
         for child in children:
             if child.startswith('.') and not include_hidden:
                 continue

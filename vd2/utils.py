@@ -5,34 +5,8 @@ import unicodedata
 
 from pathlib import Path
 
+from .iroiro import *
 from .paints import *
-
-
-def str_width(s):
-    return sum(1 + (unicodedata.east_asian_width(c) in 'WF') for c in paints.decolor(s))
-
-
-def shrinkuser(path):
-    homepath = os.path.expanduser('~').rstrip('/') + '/'
-    if path.startswith(homepath):
-        return os.path.join('~', path[len(homepath):])
-    return path
-
-
-def fsorted(iterable, key=None):
-    def filename_as_key(name):
-        def int_or_not(x):
-            if x and x[0] in '1234567890':
-                return int(x)
-            return x
-        return tuple(int_or_not(x) for x in re.split(r'([0-9]+)', name))
-
-    if key is None:
-        sort_key = filename_as_key
-    else:
-        sort_key = lambda x: filename_as_key(key(x))
-
-    return sorted(iterable, key=sort_key)
 
 
 def uniq(lst):
@@ -208,10 +182,6 @@ def fancy_diff_strings(a, b):
                 diff_oneline += green_bg(seg_b)
 
         elif tag == 'replace':
-            wa = str_width(seg_a)
-            wb = str_width(seg_b)
-            w = max(wa, wb)
-
             diff_compact_A += red_bg(seg_a)
             diff_compact_B += green_bg(seg_b)
 

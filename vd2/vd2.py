@@ -616,7 +616,7 @@ def main():
         for i in VDPath(target).listdir(args.all):
             targets.append(i)
 
-    targets = fsorted(targets)
+    targets = natsorted(targets)
 
     if not sys.stdin.isatty():
         for line in sys.stdin:
