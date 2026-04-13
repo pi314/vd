@@ -20,30 +20,6 @@ def uniq(lst):
     return ret
 
 
-_open = open
-def open(*args, **kwargs):
-    f = _open(*args, **kwargs)
-
-    def writeline(line=''):
-        f.write(line + '\n')
-
-    def writelines(lines=[]):
-        for line in lines:
-            writeline(line)
-
-    def readlines():
-        lines = []
-        for line in f:
-            lines.append(line.rstrip('\n'))
-        return lines
-
-    f.writeline = writeline
-    f.writelines = writelines
-    f.readlines = readlines
-
-    return f
-
-
 def gen_tmp_file_name(path, postfix='.vdtmp'):
     import time
     now = time.time()
