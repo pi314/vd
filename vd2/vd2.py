@@ -434,7 +434,7 @@ def step_ask_fix_it(base, new):
     logger.errorflush()
     logger.errorclear()
 
-    user_confirm = prompt_confirm('Fix it?', ['edit', 'redo', 'quit'],
+    user_confirm = prompt('Fix it?', ['edit', 'redo', 'quit'],
             allow_empty_input=False)
 
     if user_confirm == 'edit':
@@ -477,7 +477,7 @@ def step_confirm_action_list(base, new, ticket_pool):
     # logger.info('Under construction')
     # return (sys.exit, 1)
 
-    user_confirm = prompt_confirm('Continue?', ['yes', 'edit', 'redo', 'quit'])
+    user_confirm = prompt('Continue?', ['yes', 'edit', 'redo', 'quit'])
 
     if user_confirm == 'yes':
         return (step_apply_change_list, base, new, action_list)
