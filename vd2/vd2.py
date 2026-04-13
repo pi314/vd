@@ -380,15 +380,14 @@ def step_merge_actions(base, new, ticket_pool):
     dump()
     logger.debug(magenta('---- pass 2 fin ---------'))
 
-    # Pass 3, fuse contiguous RenameActions into Domino/Rotate RenameAction
-    rename_action_t = (RenameAction, DominoRenameAction, RotateRenameAction)
+    # Pass 3, fuse contiguous RenameActions into Rotate RenameAction
     has_fuse = True
     while has_fuse:
         logger.debug()
         logger.debug('loop')
         has_fuse = False
         for ticket in ticket_pool.ticket_list:
-            if not isinstance(ticket.action, rename_action_t):
+            if not isinstance(ticket.action, RenameAction):
                 continue
 
             start = ticket.participants[0]
@@ -398,7 +397,7 @@ def step_merge_actions(base, new, ticket_pool):
             if not probe:
                 continue
 
-            if probe[0] is not ticket and isinstance(probe[0].action, rename_action_t):
+            if probe[0] is not ticket and isinstance(probe[0].action, RenameAction):
                 fusee = probe[0]
 
                 if fusee.participants[-1] == start:
@@ -410,7 +409,7 @@ def step_merge_actions(base, new, ticket_pool):
 
                 else:
                     new_ticket = Ticket(
-                            DominoRenameAction(*ticket.action.targets, *fusee.action.targets[1:]),
+                            RenameAction(*ticket.action.targets, *fusee.action.targets[1:]),
                             *ticket.participants, *fusee.participants[1:])
                     ticket_pool.replace(ticket, new_ticket)
                     ticket_pool.replace(fusee, new_ticket)

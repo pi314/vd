@@ -191,32 +191,6 @@ class DeleteAction(FSAction):
         return trim_empty_folder(path)
 
 
-class RenameAction(FSAction):
-    def preview(self):
-        if self.src == self.dst:
-            return
-        logger.info(yellow('Rename:') + yellow('[') + self.src + yellow(']'))
-        logger.info(yellow('└─────►') + yellow('[') + self.dst + yellow(']'))
-
-    def apply(self):
-        if self.src == self.dst:
-            return
-        src = Path(self.src)
-        dst = Path(self.dst)
-        try:
-            if not dst.parent.exists():
-                logger.cmd(['mkdir', '-p', dst.parent])
-                dst.parent.mkdir(parents=True, exist_ok=True)
-
-            logger.cmd(['mv', src, dst])
-            src.rename(dst)
-
-            return trim_empty_folder(src)
-
-        except:
-            return False
-
-
 class CopyAction(FSAction):
     def preview(self):
         logger.info(yellow('Copy:') + yellow('[') + self.src + yellow(']'))
@@ -236,7 +210,7 @@ class CopyAction(FSAction):
             return False
 
 
-class DominoRenameAction(FSAction):
+class RenameAction(FSAction):
     def preview(self):
         if len(self) == 2:
             logger.info(yellow('Rename:') + yellow('[') + self.src + yellow(']'))
@@ -264,7 +238,7 @@ class DominoRenameAction(FSAction):
             return False
 
 
-class RotateRenameAction(FSAction):
+class RotateRenameAction(RenameAction):
     def preview(self):
         if len(self) == 2:
             logger.info(yellow('Swap:┌►') + yellow('[') + self.src + yellow(']'))
