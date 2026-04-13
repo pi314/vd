@@ -5,8 +5,9 @@ import unicodedata
 
 from pathlib import Path
 
+from . import iroiro
+
 from .iroiro import *
-from .paints import *
 
 
 def uniq(lst):
@@ -37,9 +38,9 @@ def fancy_diff_strings(a, b):
     import unicodedata
     import difflib
 
-    red_bg = paint('41')
-    green_bg = paint('42')
-    yellow_bg = paint('30;43')
+    red_bg = (iroiro.red.to_rgb() * 0.25) / iroiro.red
+    green_bg = (iroiro.green.to_rgb() * 0.25) / iroiro.green
+    yellow_bg = (iroiro.yellow.to_rgb() * 0.25) / iroiro.yellow
 
     diff_segments = []
 

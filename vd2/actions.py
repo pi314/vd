@@ -6,7 +6,6 @@ from . import logger
 from .utils import *
 from .vdpath import *
 from .inventory import *
-from .paints import *
 
 
 class TicketPool:

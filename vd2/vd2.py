@@ -36,7 +36,6 @@ from pathlib import Path
 from . import regex
 from . import logger
 
-from .paints import *
 from .utils import *
 from .inventory import *
 from .actions import *

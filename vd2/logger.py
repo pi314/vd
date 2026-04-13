@@ -1,8 +1,7 @@
 import shlex
 import threading
 
-
-from .paints import *
+from .iroiro import *
 
 
 def log(tag, *args, **kwargs):
@@ -72,7 +71,7 @@ def has_error():
 
 def cmd(c, tag=None, **kwargs):
     tokens = [
-            magenta('$'),
+            murasaki('$'),
             cyan(c[0]),
             ]
 
