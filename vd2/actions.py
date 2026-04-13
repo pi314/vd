@@ -213,8 +213,10 @@ class CopyAction(FSAction):
 class RenameAction(FSAction):
     def preview(self):
         if len(self) == 2:
-            logger.info(yellow('Rename:') + yellow('[') + self.src + yellow(']'))
-            logger.info(yellow('└─────►') + yellow('[') + self.dst + yellow(']'))
+            A, B = fancy_diff_strings(self.src, self.dst)
+            logger.info(yellow('Rename:') + yellow('[') + A + yellow(']'))
+            if B:
+                logger.info(yellow('└─────►') + yellow('[') + B + yellow(']'))
         else:
             for idx, target in enumerate(self.targets):
                 logger.info(yellow('Rename:' + ('┌─' if idx == 0 else '└►')) +

@@ -18,7 +18,6 @@
 # =============================================================================
 
 import argparse
-import difflib
 import functools
 import glob
 import inspect
