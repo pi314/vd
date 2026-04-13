@@ -1,7 +1,9 @@
+import os
 import os.path
 import sys
 import unicodedata
 
+from pathlib import Path
 
 from .paints import *
 
@@ -147,3 +149,15 @@ def open(*args, **kwargs):
     f.readlines = readlines
 
     return f
+
+
+def gen_tmp_file_name(path, postfix='.vdtmp'):
+    import time
+    now = time.time()
+    tmp_file_name = '{orig_path}{postfix}[{getpid}].{timestamp}'.format(
+            orig_path=path.lstrip('/'),
+            postfix=postfix,
+            timestamp=now,
+            getpid=os.getpid(),
+            )
+    return Path(tmp_file_name)

@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 
 from . import logger
+from .utils import *
 from .vdpath import *
 from .inventory import *
 from .paints import *
@@ -281,4 +282,33 @@ class RotateRenameAction(FSAction):
                 logger.info(yellow('Rotate:' + arrow) + yellow('[') + target + yellow(']'))
 
     def apply(self):
-        ...
+        try:
+            for p in self.targets:
+                if not Path(p).exists():
+                    logger.error(red('File does not exist:[') + p + red(']'))
+            if logger.has_error():
+                return False
+
+            tmpdst = gen_tmp_file_name(self.targets[-1])
+
+            mv_list = []
+            mv_list.append((self.targets[-1], tmpdst))
+            for src, dst in list(zip(self.targets, self.targets[1:]))[::-1]:
+                mv_list.append((src, dst))
+            mv_list.append((tmpdst, self.targets[0]))
+
+            for src, dst in mv_list:
+                src = Path(src)
+                dst = Path(dst)
+                if not dst.parent.exists():
+                    logger.cmd(['mkdir', '-p', dst.parent])
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+
+                logger.cmd(['mv', src, dst])
+                src.rename(dst)
+
+                trim_empty_folder(src)
+
+        except Exception as e:
+            logger.error(e)
+            return False

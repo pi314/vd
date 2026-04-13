@@ -18,7 +18,6 @@
 # =============================================================================
 
 import argparse
-import datetime
 import difflib
 import functools
 import glob
@@ -385,6 +384,8 @@ def step_merge_actions(base, new, ticket_pool):
     rename_action_t = (RenameAction, DominoRenameAction, RotateRenameAction)
     has_fuse = True
     while has_fuse:
+        logger.debug()
+        logger.debug('loop')
         has_fuse = False
         for ticket in ticket_pool.ticket_list:
             if not isinstance(ticket.action, rename_action_t):
@@ -397,15 +398,22 @@ def step_merge_actions(base, new, ticket_pool):
             if not probe:
                 continue
 
-            if isinstance(probe[0].action, rename_action_t):
+            if probe[0] is not ticket and isinstance(probe[0].action, rename_action_t):
                 fusee = probe[0]
 
-                new_ticket = Ticket()
-                new_ticket.action = DominoRenameAction(*ticket.action.targets, *fusee.action.targets[1:])
-                new_ticket.participants = ticket.participants + fusee.participants[1:]
+                if fusee.participants[-1] == start:
+                    new_ticket = Ticket(
+                            RotateRenameAction(*ticket.action.targets, *fusee.action.targets[1:-1]),
+                            *ticket.participants, *fusee.participants[1:-1])
+                    ticket_pool.replace(ticket, new_ticket)
+                    ticket_pool.replace(fusee, new_ticket)
 
-                ticket_pool.replace(ticket, new_ticket)
-                ticket_pool.replace(fusee, new_ticket)
+                else:
+                    new_ticket = Ticket(
+                            DominoRenameAction(*ticket.action.targets, *fusee.action.targets[1:]),
+                            *ticket.participants, *fusee.participants[1:])
+                    ticket_pool.replace(ticket, new_ticket)
+                    ticket_pool.replace(fusee, new_ticket)
 
                 has_fuse = True
 
