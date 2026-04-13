@@ -393,12 +393,12 @@ def step_merge_actions(base, new, ticket_pool):
             start = ticket.participants[0]
             end = ticket.participants[-1]
 
-            probe = ticket_pool.by_path[end].get('from')
-            if not probe:
+            candidates = ticket_pool.by_path[end].get('from')
+            if not candidates:
                 continue
 
-            if probe[0] is not ticket and isinstance(probe[0].action, RenameAction):
-                fusee = probe[0]
+            if candidates[0] is not ticket and isinstance(candidates[0].action, RenameAction):
+                fusee = candidates[0]
 
                 if fusee.participants[-1] == start:
                     new_ticket = Ticket(
@@ -458,6 +458,16 @@ def step_confirm_action_list(base, new, ticket_pool):
     if not action_list:
         logger.info('No change')
         return (sys.exit, 0)
+
+    def action_sort_key(action):
+        if isinstance(action, DeleteAction):
+            return (1, action.targets[0])
+        elif isinstance(action, CopyAction):
+            return (2, action.targets[0])
+        elif isinstance(action, RenameAction):
+            return (3, action.targets[0])
+
+    action_list = sorted(action_list, key=action_sort_key)
 
     for action in action_list:
         if hasattr(action, 'preview'):
