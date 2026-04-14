@@ -70,8 +70,13 @@ def has_error():
 
 
 def cmd(c, tag=None, **kwargs):
+    if kwargs.get('res') not in (None, True):
+        prompt_color = red
+    else:
+        prompt_color = murasaki
+
     tokens = [
-            murasaki('$'),
+            prompt_color('$'),
             cyan(c[0]),
             ]
 

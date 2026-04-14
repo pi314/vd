@@ -85,6 +85,24 @@ class Ticket:
         return f'({self.action}, {self.participants})'
 
 
+class MoveCommand:
+    def __init__(self, src, dst):
+        self.src = src
+        self.dst = dst
+        self.res = None
+
+    def __call__(self):
+        try:
+            src.rename(dst)
+            self.res = True
+        except:
+            self.res = False
+        return self.res
+
+    def preview(self):
+        logger.cmd(['mv'], self.src, self.dst, res=self.res)
+
+
 class VirtualAction:
     def __init__(self, *targets):
         self.targets = targets
