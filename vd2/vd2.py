@@ -476,25 +476,25 @@ def step_confirm_action_list(base, new, ticket_pool):
     # logger.info('Under construction')
     # return (sys.exit, 1)
 
-    user_confirm = prompt('Continue?', ['yes', 'edit', 'redo', 'quit'])
+    yn = prompt('Continue?', ['yes', 'edit', 'redo', 'quit'])
 
-    if user_confirm == 'yes':
-        return (step_apply_change_list, base, new, action_list)
+    if yn == 'yes':
+        return (step_apply_change_list, base, new, action_list, yn)
 
-    if user_confirm == 'edit':
+    if yn == 'edit':
         return (step_vim_edit_inventory, base, new)
 
-    if user_confirm == 'redo':
+    if yn == 'redo':
         return (step_vim_edit_inventory, base, base)
 
-    if user_confirm == 'quit':
+    if yn == 'quit':
         return (sys.exit, 0)
 
     logger.error(FUNC_LINE())
     return (sys.exit, 1)
 
 
-def step_apply_change_list(base, new, action_list):
+def step_apply_change_list(base, new, action_list, yn):
     logger.debug()
     logger.debug(FUNC_LINE())
     has_error = False
@@ -512,7 +512,13 @@ def step_apply_change_list(base, new, action_list):
                 logger.info('Skipped:')
                 has_error = True
 
-    return (sys.exit, 0)
+    if has_error:
+        return (sys.exit, 1)
+
+    if yn.selected == '':
+        return (sys.exit, 0)
+    else:
+        return (step_vim_edit_inventory, new, new)
 
 
 def step_expand_inventory(new):
