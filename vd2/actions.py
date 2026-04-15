@@ -97,13 +97,16 @@ class CopyCommand:
             self.preview()
             self.src.copy(self.dst, follow_symlinks=False)
             self.res = True
-        except:
+
+        except Exception as e:
+            logger.error(e)
             self.res = False
             self.preview()
+
         return self.res
 
     def preview(self):
-        logger.cmd(['cp'], self.src, self.dst, res=self.res)
+        logger.cmd(['cp', self.src, self.dst], res=self.res)
 
 
 class MoveCommand:
@@ -117,16 +120,48 @@ class MoveCommand:
             mkdir_p(self.dst)
             self.preview()
             self.src.rename(self.dst)
-            rmdir_p(src)
-
+            rmdir_p(self.src)
             self.res = True
-        except:
+
+        except Exception as e:
+            logger.error(e)
             self.res = False
             self.preview()
+
         return self.res
 
     def preview(self):
-        logger.cmd(['mv'], self.src, self.dst, res=self.res)
+        logger.cmd(['mv', self.src, self.dst], res=self.res)
+
+
+class DeleteCommand:
+    def __init__(self, src):
+        self.src = src
+        self.res = None
+
+    def __call__(self):
+        try:
+            self.preview()
+            if not self.src.is_dir() or self.src.is_symlink():
+                self.src.unlink()
+            else:
+                shutil.rmtree(self.src)
+            rmdir_p(self.src)
+            self.res = True
+
+        except Exception as e:
+            logger.error(e)
+            self.res = False
+            self.preview()
+
+        return self.res
+
+    def preview(self):
+        if not self.src.is_dir() or self.src.is_symlink():
+            cmd = ['rm', self.src]
+        else:
+            cmd = ['rm', '-r', self.src]
+        logger.cmd(cmd, res=self.res)
 
 
 class VirtualAction:
@@ -252,12 +287,9 @@ class CopyAction(FSAction):
         src = Path(self.src)
         dst = Path(self.dst)
         try:
-            if not dst.parent.exists():
-                logger.cmd(['mkdir', '-p', dst.parent])
-                dst.parent.mkdir(parents=True, exist_ok=True)
-
-            logger.cmd(['cp', src, dst])
-            src.copy(dst, follow_symlinks=False)
+            src = Path(src)
+            dst = Path(dst)
+            CopyCommand(src, dst)()
         except:
             return False
 
@@ -279,16 +311,10 @@ class RenameAction(FSAction):
             for src, dst in list(zip(self.targets, self.targets[1:]))[::-1]:
                 src = Path(src)
                 dst = Path(dst)
-                if not dst.parent.exists():
-                    logger.cmd(['mkdir', '-p', dst.parent])
-                    dst.parent.mkdir(parents=True, exist_ok=True)
+                MoveCommand(src, dst)()
 
-                logger.cmd(['mv', src, dst])
-                src.rename(dst)
-
-                rmdir_p(src)
-
-        except:
+        except Exception as e:
+            logger.error(e)
             return False
 
 
