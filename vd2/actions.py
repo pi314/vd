@@ -85,6 +85,27 @@ class Ticket:
         return f'({self.action}, {self.participants})'
 
 
+class CopyCommand:
+    def __init__(self, src, dst):
+        self.src = src
+        self.dst = dst
+        self.res = None
+
+    def __call__(self):
+        try:
+            mkdir_p(self.dst)
+            self.preview()
+            self.src.copy(self.dst, follow_symlinks=False)
+            self.res = True
+        except:
+            self.res = False
+            self.preview()
+        return self.res
+
+    def preview(self):
+        logger.cmd(['cp'], self.src, self.dst, res=self.res)
+
+
 class MoveCommand:
     def __init__(self, src, dst):
         self.src = src
@@ -93,10 +114,15 @@ class MoveCommand:
 
     def __call__(self):
         try:
-            src.rename(dst)
+            mkdir_p(self.dst)
+            self.preview()
+            self.src.rename(self.dst)
+            rmdir_p(src)
+
             self.res = True
         except:
             self.res = False
+            self.preview()
         return self.res
 
     def preview(self):
@@ -160,7 +186,16 @@ class GlobAllAction(MetaAction):
     pass
 
 
-def trim_empty_folder(path):
+def mkdir_p(path):
+    try:
+        if not path.parent.exists():
+            logger.cmd(['mkdir', '-p', path.parent])
+            path.parent.mkdir(parents=True, exist_ok=True)
+    except:
+        return
+
+
+def rmdir_p(path):
     try:
         cwd = Path.cwd().resolve()
         for probe in path.resolve().parents:
@@ -205,7 +240,7 @@ class DeleteAction(FSAction):
         except:
             return False
 
-        return trim_empty_folder(path)
+        return rmdir_p(path)
 
 
 class CopyAction(FSAction):
@@ -251,7 +286,7 @@ class RenameAction(FSAction):
                 logger.cmd(['mv', src, dst])
                 src.rename(dst)
 
-                trim_empty_folder(src)
+                rmdir_p(src)
 
         except:
             return False
@@ -300,7 +335,7 @@ class RotateRenameAction(RenameAction):
                 logger.cmd(['mv', src, dst])
                 src.rename(dst)
 
-                trim_empty_folder(src)
+                rmdir_p(src)
 
         except Exception as e:
             logger.error(e)
