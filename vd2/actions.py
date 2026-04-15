@@ -264,18 +264,11 @@ class DeleteAction(FSAction):
         logger.info(red('Delete:') + red('[') + self.src + red(']'))
 
     def apply(self):
-        path = Path(self.src)
         try:
-            if not path.is_dir() or path.is_symlink():
-                logger.cmd(['rm', path])
-                path.unlink()
-            else:
-                logger.cmd(['rm', '-r', path])
-                shutil.rmtree(path)
-        except:
+            return DeleteCommand(Path(self.src))()
+        except Exception as e:
+            logger.error(e)
             return False
-
-        return rmdir_p(path)
 
 
 class CopyAction(FSAction):
@@ -284,13 +277,10 @@ class CopyAction(FSAction):
         logger.info(yellow('└───►') + yellow('[') + self.dst + yellow(']'))
 
     def apply(self):
-        src = Path(self.src)
-        dst = Path(self.dst)
         try:
-            src = Path(src)
-            dst = Path(dst)
-            CopyCommand(src, dst)()
-        except:
+            return CopyCommand(Path(self.src), Path(self.dst))()
+        except Exception as e:
+            logger.error(e)
             return False
 
 
@@ -309,9 +299,7 @@ class RenameAction(FSAction):
     def apply(self):
         try:
             for src, dst in list(zip(self.targets, self.targets[1:]))[::-1]:
-                src = Path(src)
-                dst = Path(dst)
-                MoveCommand(src, dst)()
+                return MoveCommand(Path(src), Path(dst))()
 
         except Exception as e:
             logger.error(e)
