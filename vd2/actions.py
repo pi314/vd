@@ -197,7 +197,8 @@ class FSAction(VirtualAction):
 
 
 class TrackAction(MetaAction):
-    pass
+    def preview(self):
+        logger.info(cyan('Track:') + cyan('[') + self.src + cyan(']'))
 
 
 class NoAction(MetaAction):

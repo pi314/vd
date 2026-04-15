@@ -464,6 +464,10 @@ def step_confirm_action_list(base, new, ticket_pool):
             return (2, action.targets[0])
         elif isinstance(action, RenameAction):
             return (3, action.targets[0])
+        elif isinstance(action, UntrackAction):
+            return (4, action.targets[0])
+        elif isinstance(action, TrackAction):
+            return (5, action.targets[0])
 
     action_list = sorted(action_list, key=action_sort_key)
 
@@ -515,15 +519,24 @@ def step_apply_change_list(base, new, action_list, yn):
     if has_error:
         return (sys.exit, 1)
 
-    if yn.selected == '':
+    return (step_expand_inventory, new, action_list, yn)
+
+
+def step_expand_inventory(new, action_list, yn):
+    logger.debug()
+    logger.debug(FUNC_LINE())
+
+    has_meta = False
+    for action in action_list:
+        if isinstance(action, MetaAction):
+            has_meta = True
+
+    logger.debug('has_meta', has_meta)
+    if yn.selected == '' and has_meta == 0:
         return (sys.exit, 0)
     else:
         return (step_vim_edit_inventory, new, new)
 
-
-def step_expand_inventory(new):
-    logger.debug()
-    logger.debug(FUNC_LINE())
     return (sys.exit, 0)
 
 
