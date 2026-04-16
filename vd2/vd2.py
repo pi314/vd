@@ -525,17 +525,29 @@ def step_apply_change_list(base, new, action_list, yn):
 def step_expand_inventory(new, action_list, yn):
     logger.debug()
     logger.debug(FUNC_LINE())
+    logger.debug('==== inventory ====')
+    for item in new:
+        logger.debug(item)
+    logger.debug('==== ========= ====')
 
     has_meta = False
     for action in action_list:
         if isinstance(action, MetaAction):
             has_meta = True
 
+    newnew = Inventory()
+    for item in new:
+        if isinstance(item, TrackingItem):
+            newnew.append(TrackingItem(None, item.path.text))
+        elif isinstance(item, VDPath):
+            newnew.append(TrackingItem(None, item.text))
+    newnew.freeze()
+
     logger.debug('has_meta', has_meta)
     if yn.selected == '' and has_meta == 0:
         return (sys.exit, 0)
     else:
-        return (step_vim_edit_inventory, new, new)
+        return (step_vim_edit_inventory, newnew, newnew)
 
     return (sys.exit, 0)
 
