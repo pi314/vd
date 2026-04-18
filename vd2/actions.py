@@ -215,11 +215,13 @@ class UntrackAction(MetaAction):
 
 
 class GlobAction(MetaAction):
-    pass
+    def preview(self):
+        logger.info(cyan('Expand:') + cyan('[') + self.src + cyan(']'))
 
 
 class GlobAllAction(MetaAction):
-    pass
+    def preview(self):
+        logger.info(cyan('ExpandAll:') + cyan('[') + self.src + cyan(']'))
 
 
 def mkdir_p(path):

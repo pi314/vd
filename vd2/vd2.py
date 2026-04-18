@@ -542,10 +542,26 @@ def step_expand_inventory(new, action_list, yn):
 
     newnew = Inventory()
     for item in new:
-        if isinstance(item, TrackingItem) and item.mark != '#':
-            newnew.append(TrackingItem(None, item.path.text))
+        if isinstance(item, TrackingItem):
+            if item.mark == '#':
+                pass
+
+            elif item.mark in ('*', '+'):
+                for p in item.path.listdir(item.mark == '*'):
+                    if not newnew.contains(p):
+                        newnew.append(TrackingItem(None, p))
+
+            else:
+                newnew.append(TrackingItem(None, item.path.text))
+
         elif isinstance(item, VDPath):
             newnew.append(TrackingItem(None, item.text))
+
+        elif isinstance(item, VDGlob):
+            logger.debug('expand', item)
+            for p in item.glob():
+                if not newnew.contains(p):
+                    newnew.append(TrackingItem(None, p))
     newnew.freeze()
 
     logger.debug('has_meta', has_meta)

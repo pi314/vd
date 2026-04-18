@@ -61,7 +61,6 @@ class Inventory:
     def __eq__(self, other):
         if not isinstance(other, Inventory):
             return False
-
         return self.content == other.content
 
     def append(self, text, iii=None, mark=None):
@@ -80,6 +79,18 @@ class Inventory:
 
         else:
             self.content.append(VDPath(text.replace('[*]', '*')))
+
+    def contains(self, path):
+        vdpath = VDPath(path)
+        for item in self.content:
+            if isinstance(item, TrackingItem):
+                itempath = item.path
+            elif isinstance(item, VDPath):
+                itempath = item
+
+            if itempath == vdpath:
+                return True
+        return False
 
     def freeze(self):
         while self.content and self.content[0] is None:

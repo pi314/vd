@@ -30,11 +30,13 @@ class VDPath:
     def __repr__(self):
         return f'VDPath({self.text})'
 
-    def __eq__(self, other):
-        return type(self) == type(other) and self.text == other.text
-
     def __hash__(self):
         return hash(self.path)
+
+    def __eq__(self, other):
+        if isinstance(other, VDPath):
+            return self.path == other.path
+        return self.path == Path(other).expanduser()
 
     @property
     def text(self):
@@ -48,11 +50,6 @@ class VDPath:
             ret += '/'
 
         return shrinkuser(ret)
-
-    def __eq__(self, other):
-        if isinstance(other, VDPath):
-            return self.text == other.text
-        return self.text == str(other)
 
     @property
     def inode(self):
