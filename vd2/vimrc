@@ -19,7 +19,7 @@ endif
 
 if !g:vd_disable_key_mappings
     " Cursor movement
-    nnoremap ^ ^W
+    nnoremap <expr> ^ ((col('.') == 1) ? '^W' : '^')
     nnoremap H HW
     nnoremap M MW
     nnoremap L LW
@@ -28,7 +28,7 @@ if !g:vd_disable_key_mappings
     " Rename item
     nnoremap cc ^WC
     nnoremap S ^WC
-    nnoremap I ^Wi
+    nnoremap <expr> I ((col('.') == 1) ? 'I' : '^Wi')
 endif
 
 if !g:vd_disable_syntax_highlight
