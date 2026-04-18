@@ -394,22 +394,27 @@ def prompt(question, options=tuple(),
            abbr=True,
            ignorecase=None,
            sep=' / ',
+           yes=None,
            suppress=(EOFError, KeyboardInterrupt)):
+    import contextlib
 
     if isinstance(options, str) and ' ' in options:
         options = options.split()
 
     user_selection = UserSelection(options, accept_empty=accept_empty, abbr=abbr, sep=sep, ignorecase=ignorecase)
 
-    with HijackStdio():
-        with ExceptionSuppressor(suppress):
-            while user_selection.selected is None:
-                tui_print((question + (user_selection.prompt)), end=' ')
+    if yes is None:
+        with HijackStdio():
+            with ExceptionSuppressor(suppress):
+                while user_selection.selected is None:
+                    tui_print((question + (user_selection.prompt)), end=' ')
 
-                import contextlib
-                with contextlib.suppress(ValueError):
-                    i = tui_input().strip()
-                    user_selection.select(i)
+                    with contextlib.suppress(ValueError):
+                        i = tui_input().strip()
+                        user_selection.select(i)
+    else:
+        with contextlib.suppress(ValueError):
+            user_selection.select(yes)
 
     return user_selection
 

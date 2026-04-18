@@ -480,7 +480,12 @@ def step_confirm_action_list(base, new, ticket_pool):
     # logger.info('Under construction')
     # return (sys.exit, 1)
 
-    yn = prompt('Continue?', ['yes', 'edit', 'redo', 'quit'])
+    if all(isinstance(action, (TrackAction, UntrackAction)) for action in action_list):
+        yes = True
+    else:
+        yes = False
+
+    yn = prompt('Continue?', ['yes', 'edit', 'redo', 'quit'], yes='' if yes else None)
 
     if yn == 'yes':
         return (step_apply_change_list, base, new, action_list, yn)
@@ -537,7 +542,7 @@ def step_expand_inventory(new, action_list, yn):
 
     newnew = Inventory()
     for item in new:
-        if isinstance(item, TrackingItem):
+        if isinstance(item, TrackingItem) and item.mark != '#':
             newnew.append(TrackingItem(None, item.path.text))
         elif isinstance(item, VDPath):
             newnew.append(TrackingItem(None, item.text))
