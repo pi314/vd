@@ -324,8 +324,15 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         return (sys.exit, 1)
 
     if not ticket_pool:
-        logger.info('No change')
-        return (sys.exit, 0)
+        base_iii_order = [item.iii for item in base]
+        new_iii_order = [item.iii for item in new]
+
+        if base_iii_order != new_iii_order:
+            return (step_vim_edit_inventory, new, new)
+
+        else:
+            logger.info('No change')
+            return (sys.exit, 0)
 
     return (step_merge_actions, base, new, ticket_pool)
 
