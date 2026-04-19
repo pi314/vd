@@ -361,3 +361,11 @@ class RotateRenameAction(RenameAction):
         except Exception as e:
             logger.error(e)
             return False
+
+
+class CompressAction(FSAction):
+    pass
+
+
+class UncompressAction(FSAction):
+    pass
