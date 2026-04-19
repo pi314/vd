@@ -89,7 +89,7 @@ class VDPath:
 
     def listdir(self, include_hidden):
         if not self.exists:
-            return []
+            return [self.txt]
 
         if not self.isdir:
             return ['.'] if not self.txt else [self.text]
