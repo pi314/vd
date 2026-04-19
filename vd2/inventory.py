@@ -83,10 +83,12 @@ class Inventory:
     def contains(self, path):
         vdpath = VDPath(path)
         for item in self.content:
-            if isinstance(item, TrackingItem):
+            if isinstance(item, TrackingItem) and item.mark == '.':
                 itempath = item.path
             elif isinstance(item, VDPath):
                 itempath = item
+            else:
+                continue
 
             if itempath == vdpath:
                 return True

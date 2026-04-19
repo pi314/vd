@@ -219,7 +219,7 @@ def step_collect_inventory_delta(base, new):
         if item is None:
             continue
 
-        if not isinstance(item, TrackingItem):
+        if isinstance(item, (VDGlob, VDPath)):
             delta_by_iii[None].append(item)
             continue
 
@@ -323,10 +323,10 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         return (sys.exit, 1)
 
     if not ticket_pool:
-        base_iii_order = [item.iii for item in base]
-        new_iii_order = [item.iii for item in new]
+        base_iii_order = [getattr(item, 'iii', 0) for item in base]
+        new_iii_order = [getattr(item, 'iii', 0) for item in new]
 
-        if base_iii_order != new_iii_order:
+        if sorted(base_iii_order) == sorted(new_iii_order) and base_iii_order != new_iii_order:
             return (step_vim_edit_inventory, new, new)
 
         else:
@@ -474,6 +474,7 @@ def step_confirm_action_list(base, new, ticket_pool):
             return (4, action.targets[0])
         elif isinstance(action, TrackAction):
             return (5, action.targets[0])
+        return (99, action.targets[0])
 
     action_list = sorted(action_list, key=action_sort_key)
 
@@ -554,7 +555,7 @@ def step_expand_inventory(new, action_list, yn):
 
             elif item.mark in ('*', '+'):
                 for p in item.path.listdir(item.mark == '*'):
-                    if not newnew.contains(p):
+                    if not new.contains(p):
                         newnew.append(TrackingItem(None, p))
 
             else:
@@ -566,8 +567,9 @@ def step_expand_inventory(new, action_list, yn):
         elif isinstance(item, VDGlob):
             logger.debug('expand', item)
             for p in item.glob():
-                if not newnew.contains(p):
+                if not new.contains(p):
                     newnew.append(TrackingItem(None, p))
+
     newnew.freeze()
 
     logger.debug('has_meta', has_meta)
