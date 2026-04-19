@@ -33,7 +33,6 @@ import tempfile
 
 from pathlib import Path
 
-from . import regex
 from . import logger
 
 from .utils import *
@@ -177,7 +176,7 @@ def step_vim_edit_inventory(base, inventory):
                     new.append(None)
                     continue
 
-                rec = regex.rere(line)
+                rec = rere(line)
 
                 if rec.match(r'^([#+*@]?) *(\d+)\t+(.*)$'):
                     mark, iii, path = rec.groups()
