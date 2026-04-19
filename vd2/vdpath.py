@@ -1,3 +1,4 @@
+import os
 import glob
 
 from os.path import expanduser, join
@@ -24,6 +25,11 @@ class VDGlob:
 
 class VDPath:
     def __init__(self, text):
+        if ' -> ' in text:
+            text = text.split(' -> ')[0]
+        if text.endswith('|'):
+            text = text.rstrip('|')
+
         self.txt = text
         self.path = Path(text).expanduser()
 
@@ -46,8 +52,12 @@ class VDPath:
         ret = self.txt.rstrip('/')
 
         # Add postfix to display text
-        if self.isdir and not self.txt.endswith('*'):
+        if self.isdir:
             ret += '/'
+        elif self.islink:
+            ret += ' -> ' + os.readlink(self.path)
+        elif self.isfifo:
+            ret += '|'
 
         return shrinkuser(ret)
 
@@ -60,7 +70,6 @@ class VDPath:
     def realpath(self):
         if self.islink:
             return str(self.path.parent.resolve() / self.path.name)
-
         return str(self.path.resolve())
 
     @property

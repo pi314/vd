@@ -74,11 +74,11 @@ class Inventory:
         elif iii is not None:
             self.content.append(TrackingItem(int(iii, 10), text, mark=mark))
 
-        elif '*' in text.replace('[*]', '_'):
+        elif '*' in text:
             self.content.append(VDGlob(text))
 
         else:
-            self.content.append(VDPath(text.replace('[*]', '*')))
+            self.content.append(VDPath(text))
 
     def contains(self, path):
         vdpath = VDPath(path)

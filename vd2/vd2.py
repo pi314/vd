@@ -271,8 +271,8 @@ def step_construct_raw_actions(base, new, delta_by_iii):
     # Index newly added paths as TrackAction
     for item in delta_by_iii[None]:
         ticket_pool.register(
-                ('track', Path(item.text)),
-                TrackAction(item.text))
+                ('track', Path(item.txt)),
+                TrackAction(item.txt))
 
     del delta_by_iii[None]
 
@@ -289,10 +289,10 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         if not change.dst:
             ticket_pool.register(
                     ('delete', src),
-                    DeleteAction(src.text))
+                    DeleteAction(src.txt))
 
         for dst in change.dst:
-            if dst.mark != '.' and src.text != dst.text:
+            if dst.mark != '.' and src != dst:
                 logger.errorq('Conflict: path and mark changed at the same time:', dst)
                 continue
 
@@ -305,18 +305,18 @@ def step_construct_raw_actions(base, new, delta_by_iii):
                         }.get(dst.mark)
                 ticket_pool.register(
                         (tag, src),
-                        action_cls(src.text))
+                        action_cls(src.txt))
 
-            elif src.text == dst.text:
+            elif src == dst:
                 ticket_pool.register(
                         ('nop', to_path(src)),
-                        NoAction(src.text))
+                        NoAction(src.txt))
 
             else:
                 ticket_pool.register(
                         ('from', to_path(src)),
                         ('to', to_path(dst)),
-                        CopyAction(src.text, dst.text))
+                        CopyAction(src.txt, dst.txt))
 
     if logger.has_error():
         logger.errorflush()
@@ -537,10 +537,10 @@ def step_apply_change_list(base, new, action_list, yn):
 def step_expand_inventory(new, action_list, yn):
     logger.debug()
     logger.debug(FUNC_LINE())
-    logger.debug('==== inventory ====')
+    logger.debug(magenta('==== inventory ===='))
     for item in new:
         logger.debug(item)
-    logger.debug('==== ========= ====')
+    logger.debug(magenta('==== ========= ===='))
 
     has_meta = False
     for action in action_list:

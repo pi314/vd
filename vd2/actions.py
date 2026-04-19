@@ -211,7 +211,6 @@ class NoAction(MetaAction):
 
 class ResolveLinkAction(MetaAction):
     pass
-    # os.readlink(target)
 
 
 class UntrackAction(MetaAction):
