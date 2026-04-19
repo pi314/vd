@@ -150,9 +150,13 @@ class DeleteCommand:
             self.res = True
 
         except Exception as e:
-            logger.error(e)
-            self.res = False
-            self.preview()
+            if not self.src.exists():
+                # Delete failed but it's gone so ok
+                logger.warning(e)
+            else:
+                logger.error(e)
+                self.res = False
+                self.preview()
 
         return self.res
 
