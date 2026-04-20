@@ -210,11 +210,13 @@ class NoAction(MetaAction):
 
 
 class ResolveLinkAction(MetaAction):
-    pass
+    def preview(self):
+        logger.info(cyan('Resolve:') + cyan('[') + self.src + cyan(']'))
 
 
 class UntrackAction(MetaAction):
-    pass
+    def preview(self):
+        logger.info(cyan('Untrack:') + cyan('[') + self.src + cyan(']'))
 
 
 class GlobAction(MetaAction):

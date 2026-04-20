@@ -491,9 +491,6 @@ def step_confirm_action_list(base, new, ticket_pool):
         else:
             logger.debug(repr(action))
 
-    # logger.info('Under construction')
-    # return (sys.exit, 1)
-
     if all(isinstance(action, (TrackAction, UntrackAction)) for action in action_list):
         yes = True
     else:
@@ -564,6 +561,10 @@ def step_expand_inventory(new, action_list, yn):
                 for p in item.path.listdir(item.mark == '*'):
                     if not new.contains(p):
                         newnew.append(TrackingItem(None, p))
+
+            elif item.mark == '@':
+                if not new.contains(item.path.ref):
+                    newnew.append(TrackingItem(None, item.path.ref))
 
             else:
                 newnew.append(TrackingItem(None, item.path))
