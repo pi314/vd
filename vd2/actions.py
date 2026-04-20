@@ -24,7 +24,7 @@ class TicketPool:
         return iter(self.ticket_list)
 
     def to_path(self, arg):
-        if isinstance(arg, VDPath):
+        if isinstance(arg, (VDPath, VDLink)):
             return arg.path
         if isinstance(arg, TrackingItem):
             return self.to_path(arg.path)

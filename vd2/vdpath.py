@@ -25,13 +25,8 @@ class VDGlob:
 
 class VDPath:
     def __init__(self, text):
-        if ' -> ' in text:
-            text = text.split(' -> ')[0]
-        if text.endswith('|'):
-            text = text.rstrip('|')
-
         self.txt = text
-        self.path = Path(text).expanduser()
+        self.path = Path(text.rstrip('|/')).expanduser()
 
     def __repr__(self):
         return f'VDPath({self.text})'
@@ -49,13 +44,11 @@ class VDPath:
         if not self.txt:
             return '.'
 
-        ret = self.txt.rstrip('/')
+        ret = self.txt.rstrip('|/')
 
         # Add postfix to display text
         if self.isdir:
             ret += '/'
-        elif self.islink:
-            ret += ' -> ' + os.readlink(self.path)
         elif self.isfifo:
             ret += '|'
 
@@ -118,3 +111,32 @@ class VDPath:
             ret = ['.'] if not self.txt else [self.text]
 
         return ret
+
+
+class VDLink:
+    def __init__(self, lnk_text, ref_text=None):
+        self.lnk_text = lnk_text
+        self.lnk = VDPath(self.lnk_text)
+
+        self.ref_text = ref_text or os.readlink(self.lnk.path)
+        self.ref = VDPath(self.ref_text)
+
+    def __repr__(self):
+        return f'VDLink({self.lnk} -> {self.ref})'
+
+    def __hash__(self):
+        return hash(self.lnk)
+
+    def __eq__(self, other):
+        if isinstance(other, VDPath):
+            return self.lnk == other
+        if isinstance(other, VDLink):
+            return (self.lnk, self.ref) == (other.lnk, other.ref)
+        return self.lnk == other
+
+    @property
+    def text(self):
+        return self.lnk.text + ' -> ' + self.ref.text
+
+    def __getattr__(self, attr):
+        return getattr(self.lnk, attr)

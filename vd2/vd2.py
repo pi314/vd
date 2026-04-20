@@ -134,7 +134,7 @@ def step_vim_edit_inventory(base, inventory):
                 for item in inventory:
                     if item is None:
                         f.writeline()
-                    elif isinstance(item, (VDPath, VDGlob)):
+                    elif isinstance(item, (VDPath, VDGlob, VDLink)):
                         f.writeline(f'{item.text}')
                     elif item.iii is None:
                         f.writeline(f'{item.text}')
@@ -180,13 +180,30 @@ def step_vim_edit_inventory(base, inventory):
 
                 if rec.match(r'^([#+*@]?) *(\d+)\t+(.*)$'):
                     mark, iii, path = rec.groups()
+
+                    if '*' in path:
+                        path = VDGlob(path)
+                    elif '->' in path:
+                        a, b = path.split('->')
+                        a = a.rstrip()
+                        b = b.lstrip()
+                        path = VDLink(a, b)
+                    else:
+                        path = VDPath(path)
+
                     new.append(path, iii=iii, mark=mark)
 
                 elif line.startswith('#'):
                     continue
 
                 else:
-                    new.append(line)
+                    if '*' in line:
+                        path = VDGlob(line)
+                    elif '->' in line:
+                        path = VDLink(line.split('->')[0].rstrip())
+                    else:
+                        path = VDPath(line)
+                    new.append(path)
 
         new.freeze()
 
@@ -219,7 +236,7 @@ def step_collect_inventory_delta(base, new):
         if item is None:
             continue
 
-        if isinstance(item, (VDGlob, VDPath)):
+        if isinstance(item, (VDGlob, VDPath, VDLink)):
             delta_by_iii[None].append(item)
             continue
 
@@ -247,15 +264,6 @@ def step_construct_raw_actions(base, new, delta_by_iii):
     logger.debug('Mapping')
 
     ticket_pool = TicketPool()
-
-    def to_path(arg):
-        if isinstance(arg, VDPath):
-            return arg.path
-        if isinstance(arg, TrackingItem):
-            return to_path(arg.path)
-        if isinstance(arg, Path):
-            return arg
-        return Path(arg)
 
     # Index everything from base inventory pathlib.Path()
     for item in base:
@@ -292,8 +300,8 @@ def step_construct_raw_actions(base, new, delta_by_iii):
                     DeleteAction(src.txt))
 
         for dst in change.dst:
-            if dst.mark != '.' and src != dst:
-                logger.errorq('Conflict: path and mark changed at the same time:', dst)
+            if dst.mark not in '.#' and src.path != dst.path:
+                logger.error('Conflict: path and mark changed at the same time:', dst.path)
                 continue
 
             if dst.mark in '#*+@':
@@ -309,17 +317,16 @@ def step_construct_raw_actions(base, new, delta_by_iii):
 
             elif src == dst:
                 ticket_pool.register(
-                        ('nop', to_path(src)),
+                        ('nop', src),
                         NoAction(src.txt))
 
             else:
                 ticket_pool.register(
-                        ('from', to_path(src)),
-                        ('to', to_path(dst)),
+                        ('from', src),
+                        ('to', dst),
                         CopyAction(src.txt, dst.txt))
 
     if logger.has_error():
-        logger.errorflush()
         return (sys.exit, 1)
 
     if not ticket_pool:
@@ -559,10 +566,10 @@ def step_expand_inventory(new, action_list, yn):
                         newnew.append(TrackingItem(None, p))
 
             else:
-                newnew.append(TrackingItem(None, item.path.text))
+                newnew.append(TrackingItem(None, item.path))
 
-        elif isinstance(item, VDPath):
-            newnew.append(TrackingItem(None, item.text))
+        elif isinstance(item, (VDPath, VDLink)):
+            newnew.append(TrackingItem(None, item.path))
 
         elif isinstance(item, VDGlob):
             logger.debug('expand', item)
@@ -695,7 +702,8 @@ def main():
 
     for item in inventory:
         if not item.exists:
-            logger.error('File does not exist:', item.text)
+            logger.error(item)
+            logger.error('File does not exist: ' + red('[') + item.text + red(']'))
 
     if logger.has_error():
         sys.exit(1)

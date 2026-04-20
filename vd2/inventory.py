@@ -15,7 +15,12 @@ class TrackingItem:
         else:
             self.mark = mark
 
-        self.path = VDPath(text)
+        if isinstance(text, (VDPath, VDGlob, VDLink)):
+            self.path = text
+        else:
+            self.path = VDPath(text)
+            if self.path.islink:
+                self.path = VDLink(text)
 
     def __eq__(self, other):
         return (type(self) == type(other) and
@@ -27,8 +32,7 @@ class TrackingItem:
         return f'{self.mark.ljust(1)} {self.iii} [{self.path}]'
 
     def __getattr__(self, attr):
-        if hasattr(self.path, attr):
-            return getattr(self.path, attr)
+        return getattr(self.path, attr)
 
     @property
     def type(self):
@@ -74,11 +78,15 @@ class Inventory:
         elif iii is not None:
             self.content.append(TrackingItem(int(iii, 10), text, mark=mark))
 
-        elif '*' in text:
-            self.content.append(VDGlob(text))
+        elif isinstance(text, (VDPath, VDGlob, VDLink)):
+            self.content.append(text)
 
         else:
-            self.content.append(VDPath(text))
+            vdpath = VDPath(text)
+            if vdpath.islink:
+                self.content.append(VDLink(text))
+            else:
+                self.content.append(vdpath)
 
     def contains(self, path):
         vdpath = VDPath(path)
