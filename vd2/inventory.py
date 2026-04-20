@@ -95,14 +95,10 @@ class Inventory:
             vdpath = VDPath(path)
 
         for item in self.content:
-            if isinstance(item, TrackingItem) and item.mark == '.':
-                itempath = item.path
-            elif isinstance(item, VDPath):
-                itempath = item
-            else:
+            if not isinstance(item, TrackingItem) or item.mark != '.':
                 continue
 
-            if itempath == vdpath:
+            if item.path == vdpath:
                 return True
         return False
 

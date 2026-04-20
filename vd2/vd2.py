@@ -570,7 +570,8 @@ def step_expand_inventory(new, action_list, yn):
                 newnew.append(TrackingItem(None, item.path))
 
         elif isinstance(item, (VDPath, VDLink)):
-            newnew.append(TrackingItem(None, item.path))
+            if not new.contains(item):
+                newnew.append(TrackingItem(None, item))
 
         elif isinstance(item, VDGlob):
             logger.debug('expand', item)
