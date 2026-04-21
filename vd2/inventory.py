@@ -43,9 +43,12 @@ class TrackingItem:
         if self.isfile and self.isexecutable:
             return 2
         if self.islink:
-            return 3
+            if self.path.path.exists():
+                return 3
+            else:
+                return 4
         if self.isfifo:
-            return 4
+            return 5
         return 0
 
 

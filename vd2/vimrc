@@ -77,10 +77,11 @@ endif
 if !g:vd_disable_syntax_highlight
     set listchars=tab:\\x20│\\x20
 
-    highlight link vdComment Comment
-    syntax region vdComment start=/^#/ end=/$/ oneline
+    syntax region VDComment start=/^#/ end=/$/ oneline
+    highlight link VDComment Comment
 
     " Parse $LS_COLORS for basic highlighting
+    let s:ls_colors = {}
     for s:entry in split($LS_COLORS, ':')
         let s:m = matchlist(s:entry, '\v^(\w+)\=([0-9;]+)$')
         let [s:unused, s:glob, s:code; s:unused] = s:m
@@ -110,26 +111,58 @@ if !g:vd_disable_syntax_highlight
 
             call remove(s:code_list, 0)
         endwhile
-        let s:hlgroup = 'vdHlGroup_'. s:glob
 
         let s:cterm = exists('s:attr') ? ('cterm='. s:attr) : ''
         let s:ctermfg = exists('s:fg') ? ('ctermfg='. string(s:fg)) : ''
         let s:ctermbg = exists('s:bg') ? ('ctermbg='. string(s:bg)) : ''
 
-        exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
+        " exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
+        let s:ls_colors[s:glob] = [s:cterm, s:ctermfg, s:ctermbg]
     endfor
 
-    syntax region vdInventoryItem start=/^\v[+*@]?\d+/ end=/$/ oneline
+    syntax region VDInventoryItem start=/^\v[+*@]?\d+/ end=/$/ oneline
 
-    highlight link vdIII Number
-    syntax match vdIII /\v(^\D?)@<=\zs(\d+)\ze\t/ containedin=VdInventoryItem
+    highlight link VDIII Number
+    syntax match VDIII /\v(^\D?)@<=\zs(\d+)\ze\t/ contained containedin=VDInventoryItem
 
-    syntax match vdHlGroup_di /\v(^\D?\d+1\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-    syntax match vdHlGroup_ex /\v(^\D?\d+2\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-    syntax match vdHlGroup_ln /\v(^\D?\d+3\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
-    syntax match vdHlGroup_pi /\v(^\D?\d+4\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match VDFileItem /\v(^\D?\d+0\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDDirItem /\v(^\D?\d+1\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDExecFileItem /\v(^\D?\d+2\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDLinkItem /\v(^\D?\d+3\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDDeadLinkItem /\v(^\D?\d+4\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDFifoItem /\v(^\D?\d+5\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDErrorItem /\v(^\D?\d+9\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
 
-    highlight vdHlGroup_err ctermfg=black ctermbg=red
-    syntax match vdHlGroup_err /\v(^\D?\d+9\t)@<=\zs(.+)\ze$/ containedin=VdInventoryItem
+    syntax match VDFilePath /\v\t@<=.+$/ contained containedin=VDFileItem
+
+    syntax match VDDirPath /\v\t@<=.+$/ contained containedin=VDDirItem
+    exec join(['highlight', 'VDDirPath', ] + s:ls_colors['di'])
+
+    syntax match VDExecFilePath /\v\t@<=.+$/ contained containedin=VDExecFileItem
+    exec join(['highlight', 'VDExecFilePath', ] + s:ls_colors['ex'])
+
+    syntax match VDLinkArrow /\v *\V->\v */ containedin=VDLinkItem,VDDeadLinkItem
+    highlight VDLinkArrow ctermfg=240 " TBD
+
+    syntax match VDLinkPath /\v\t@<=\zs.+[^ ]\ze( *\V->\v)@=/ contained containedin=VDLinkItem,VDDeadLinkItem
+    highlight VDLinkPath ctermfg=220 " TBD
+    exec join(['highlight', 'VDLinkPath', ] + s:ls_colors['ln'])
+
+    syntax match VDLinkTarget /\v(\t.+ *\V->\v *)@<=[^ ].+$/ contained containedin=VDLinkItem
+
+    syntax match VDDeadLinkPath /\v\t@<=\zs.+[^ ]\ze( *\V->\v)@=/ contained containedin=VDDeadLinkItem
+    exec join(['highlight', 'VDDeadLinkPath', ] + s:ls_colors['ln'])
+
+    syntax match VDDeadLinkTarget /\v(\t.+ *\V->\v *)@<=[^ ].+$/ contained containedin=VDDeadLinkItem
+    highlight VDDeadLinkTarget ctermfg=9
+
+    syntax match VDFifoPath /\v\t@<=.+[^|]/ contained containedin=VDFifoItem
+    exec join(['highlight', 'VDFifoPath', ] + s:ls_colors['pi'])
+
+    syntax match VDFifoSymbol /|$/ contained containedin=VDFifoItem
+    highlight VDFifoSymbol ctermfg=3
+
+    syntax match VDErrorFilePath /\v\t@<=.+$/ contained containedin=VDErrorItem
+    highlight VDErrorFilePath ctermfg=black ctermbg=red
 
 endif
