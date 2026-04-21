@@ -304,6 +304,12 @@ def step_construct_raw_actions(base, new, delta_by_iii):
                 logger.error('Conflict: path and mark changed at the same time:', dst.path)
                 continue
 
+            elif type(src.path) != type(dst.path):
+                logger.error('Conflict: Cannot change item type:')
+                logger.error(f'{src}')
+                logger.error(f'{dst}')
+                continue
+
             if dst.mark in '#*+@':
                 action_cls, tag = {
                         '#': (UntrackAction, 'untrack'),
