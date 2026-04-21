@@ -168,6 +168,33 @@ class DeleteCommand:
         logger.cmd(cmd, res=self.res)
 
 
+class RelinkCommand:
+    def __init__(self, lnk, ref):
+        self.lnk = lnk
+        self.ref = ref
+        self.res = None
+
+    def __call__(self):
+        try:
+            self.preview()
+            if self.lnk.exists() or self.lnk.is_symlink():
+                self.lnk.unlink()
+            self.lnk.symlink_to(self.ref)
+            self.res = True
+
+        except Exception as e:
+            logger.error(e)
+            self.res = False
+            self.preview()
+
+        return self.res
+
+    def preview(self):
+        if self.lnk.exists() or self.lnk.is_symlink():
+            logger.cmd(['rm', self.lnk], res=self.res)
+        logger.cmd(['ln', '-s', self.ref, self.lnk], res=self.res)
+
+
 class VirtualAction:
     def __init__(self, *targets):
         self.targets = targets
@@ -356,6 +383,26 @@ class RotateRenameAction(RenameAction):
                 src.rename(dst)
 
                 rmdir_p(src)
+
+        except Exception as e:
+            logger.error(e)
+            return False
+
+
+class RelinkAction(FSAction):
+    def preview(self):
+        logger.info(yellow('Relink:') + yellow('[') + self.src.txt + yellow(']'))
+
+        ref = VDPath(os.readlink(self.src.path))
+        color = yellow if ref.exists else red
+        logger.info(yellow('├──x──►') + color('[') + ref.txt + color(']'))
+
+        color = yellow if self.dst.exists else red
+        logger.info(yellow('└─────►') + color('[') + self.dst.txt + color(']'))
+
+    def apply(self):
+        try:
+            return RelinkCommand(self.src.path, self.dst.path)()
 
         except Exception as e:
             logger.error(e)

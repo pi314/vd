@@ -329,6 +329,16 @@ def step_construct_raw_actions(base, new, delta_by_iii):
                         ('nop', src),
                         NoAction(src.path))
 
+            elif src.path.islink and dst.path.islink:
+                if src.lnk == dst.lnk:
+                    ticket_pool.register(
+                            ('relink', src),
+                            RelinkAction(src.lnk, dst.ref))
+                else:
+                    print(repr(src.lnk))
+                    print(repr(dst.lnk))
+                    sys.exit(1)
+
             else:
                 ticket_pool.register(
                         ('from', src),
