@@ -26,7 +26,7 @@ class VDGlob:
 class VDPath:
     def __init__(self, text):
         self.txt = text
-        self.path = Path(text.rstrip('|/')).expanduser()
+        self.path = Path(text.rstrip('|/'))
 
     def __repr__(self):
         return f'VDPath({self.text})'
@@ -37,7 +37,7 @@ class VDPath:
     def __eq__(self, other):
         if isinstance(other, VDPath):
             return self.path == other.path
-        return self.path == Path(other).expanduser()
+        return self.path.expanduser() == Path(other).expanduser()
 
     @property
     def text(self):
