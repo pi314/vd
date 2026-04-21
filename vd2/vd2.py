@@ -496,7 +496,7 @@ def step_confirm_action_list(base, new, ticket_pool):
     else:
         yes = False
 
-    yn = prompt('Continue?', ['yes', 'edit', 'redo', 'quit'], yes='' if yes else None)
+    yn = prompt('Continue?', ['yes', 'no', 'edit', 'redo'], yes='' if yes else None)
 
     if yn == 'yes':
         return (step_apply_change_list, base, new, action_list, yn)
@@ -507,7 +507,7 @@ def step_confirm_action_list(base, new, ticket_pool):
     if yn == 'redo':
         return (step_vim_edit_inventory, base, base)
 
-    if yn == 'quit':
+    if yn == 'no':
         return (sys.exit, 0)
 
     logger.error(FUNC_LINE())
