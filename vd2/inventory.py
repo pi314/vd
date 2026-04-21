@@ -91,6 +91,8 @@ class Inventory:
     def contains(self, path):
         if isinstance(path, VDPath):
             vdpath = path
+        elif isinstance(path, VDLink):
+            vdpath = path.lnk
         else:
             vdpath = VDPath(path)
 

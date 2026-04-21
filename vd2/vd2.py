@@ -387,7 +387,15 @@ def step_merge_actions(base, new, ticket_pool):
         logger.errorflush()
         return (step_ask_fix_it, base, new)
 
-    # Pass 2, transform (CopyAction && !NoAction) into RenameAction
+    # Pass 2, cancel DeleteAction if TrackAction exists
+    for path, actions in ticket_pool.by_path.items():
+        if 'delete' in actions and 'track' in actions:
+            for ticket in actions['delete']:
+                ticket.action = NoAction(ticket.action.src)
+    dump()
+    logger.debug(magenta('---- pass 2 fin ---------'))
+
+    # Pass 3, transform (CopyAction && !NoAction) into RenameAction
     for path, actions in ticket_pool.by_path.items():
         if 'from' in actions and 'nop' not in actions:
             for ticket in actions['from']:
@@ -395,9 +403,9 @@ def step_merge_actions(base, new, ticket_pool):
                     ticket.action = RenameAction(ticket.action.src, ticket.action.dst)
                     break
     dump()
-    logger.debug(magenta('---- pass 2 fin ---------'))
+    logger.debug(magenta('---- pass 3 fin ---------'))
 
-    # Pass 3, fuse contiguous RenameActions into Rotate RenameAction
+    # Pass 4, fuse contiguous RenameActions into Rotate RenameAction
     has_fuse = True
     while has_fuse:
         logger.debug()
@@ -470,7 +478,8 @@ def step_confirm_action_list(base, new, ticket_pool):
 
     action_list = [ticket.action
                    for ticket in ticket_pool
-                   if ticket.action is not None]
+                   if ticket.action is not None and
+                   not isinstance(ticket.action, NoAction)]
 
     if not action_list:
         logger.info('No change')
