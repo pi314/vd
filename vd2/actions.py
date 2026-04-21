@@ -57,7 +57,7 @@ class TicketPool:
             self.by_path[path][tag].append(ticket)
             ticket.participants.append(path)
 
-        if tag != 'nop':
+        if not isinstance(action, NoAction):
             self.ticket_list.append(ticket)
 
     def deregister(self, ticket):
@@ -202,7 +202,7 @@ class FSAction(VirtualAction):
 
 class TrackAction(MetaAction):
     def preview(self):
-        logger.info(cyan('Track:') + cyan('[') + self.src + cyan(']'))
+        logger.info(cyan('Track:') + cyan('[') + self.src.txt + cyan(']'))
 
 
 class NoAction(MetaAction):
@@ -211,22 +211,22 @@ class NoAction(MetaAction):
 
 class ResolveLinkAction(MetaAction):
     def preview(self):
-        logger.info(cyan('Resolve:') + cyan('[') + self.src + cyan(']'))
+        logger.info(cyan('Resolve:') + cyan('[') + self.src.txt + cyan(']'))
 
 
 class UntrackAction(MetaAction):
     def preview(self):
-        logger.info(cyan('Untrack:') + cyan('[') + self.src + cyan(']'))
+        logger.info(cyan('Untrack:') + cyan('[') + self.src.txt + cyan(']'))
 
 
 class GlobAction(MetaAction):
     def preview(self):
-        logger.info(cyan('Expand:') + cyan('[') + self.src + cyan(']'))
+        logger.info(cyan('Expand:') + cyan('[') + self.src.txt + cyan(']'))
 
 
 class GlobAllAction(MetaAction):
     def preview(self):
-        logger.info(cyan('ExpandAll:') + cyan('[') + self.src + cyan(']'))
+        logger.info(cyan('ExpandAll:') + cyan('[') + self.src.txt + cyan(']'))
 
 
 def mkdir_p(path):
@@ -269,11 +269,11 @@ def rmdir_p(path):
 
 class DeleteAction(FSAction):
     def preview(self):
-        logger.info(red('Delete:') + red('[') + self.src + red(']'))
+        logger.info(red('Delete:') + red('[') + self.src.txt + red(']'))
 
     def apply(self):
         try:
-            return DeleteCommand(Path(self.src))()
+            return DeleteCommand(self.src.path)()
         except Exception as e:
             logger.error(e)
             return False
@@ -281,12 +281,12 @@ class DeleteAction(FSAction):
 
 class CopyAction(FSAction):
     def preview(self):
-        logger.info(yellow('Copy:') + yellow('[') + self.src + yellow(']'))
-        logger.info(yellow('└───►') + yellow('[') + self.dst + yellow(']'))
+        logger.info(yellow('Copy:') + yellow('[') + self.src.txt + yellow(']'))
+        logger.info(yellow('└───►') + yellow('[') + self.dst.txt + yellow(']'))
 
     def apply(self):
         try:
-            return CopyCommand(Path(self.src), Path(self.dst))()
+            return CopyCommand(self.src.path, self.dst.path)()
         except Exception as e:
             logger.error(e)
             return False
@@ -295,7 +295,7 @@ class CopyAction(FSAction):
 class RenameAction(FSAction):
     def preview(self):
         if len(self) == 2:
-            A, B = fancy_diff_strings(self.src, self.dst)
+            A, B = fancy_diff_strings(self.src.txt, self.dst.txt)
             logger.info(yellow('Rename:') + yellow('[') + A + yellow(']'))
             if B:
                 logger.info(yellow('└─────►') + yellow('[') + B + yellow(']'))
@@ -307,7 +307,7 @@ class RenameAction(FSAction):
     def apply(self):
         try:
             for src, dst in list(zip(self.targets, self.targets[1:]))[::-1]:
-                return MoveCommand(Path(src), Path(dst))()
+                return MoveCommand(src.path, dst.path)()
 
         except Exception as e:
             logger.error(e)
@@ -317,8 +317,8 @@ class RenameAction(FSAction):
 class RotateRenameAction(RenameAction):
     def preview(self):
         if len(self) == 2:
-            logger.info(yellow('Swap:┌►') + yellow('[') + self.src + yellow(']'))
-            logger.info(yellow('Swap:└►') + yellow('[') + self.dst + yellow(']'))
+            logger.info(yellow('Swap:┌►') + yellow('[') + self.src.txt + yellow(']'))
+            logger.info(yellow('Swap:└►') + yellow('[') + self.dst.txt + yellow(']'))
         else:
             total_len = len(self.targets)
             for idx, target in enumerate(self.targets):
@@ -329,13 +329,13 @@ class RotateRenameAction(RenameAction):
                 else:
                     arrow = '│ └►'
 
-                logger.info(yellow('Rotate:' + arrow) + yellow('[') + target + yellow(']'))
+                logger.info(yellow('Rotate:' + arrow) + yellow('[') + target.txt + yellow(']'))
 
     def apply(self):
         try:
             for p in self.targets:
-                if not Path(p).exists():
-                    logger.error(red('File does not exist:[') + p + red(']'))
+                if not p.exists:
+                    logger.error(red('File does not exist:[') + p.txt + red(']'))
             if logger.has_error():
                 return False
 
@@ -344,12 +344,10 @@ class RotateRenameAction(RenameAction):
             mv_list = []
             mv_list.append((self.targets[-1], tmpdst))
             for src, dst in list(zip(self.targets, self.targets[1:]))[::-1]:
-                mv_list.append((src, dst))
+                mv_list.append((src.path, dst.path))
             mv_list.append((tmpdst, self.targets[0]))
 
             for src, dst in mv_list:
-                src = Path(src)
-                dst = Path(dst)
                 if not dst.parent.exists():
                     logger.cmd(['mkdir', '-p', dst.parent])
                     dst.parent.mkdir(parents=True, exist_ok=True)

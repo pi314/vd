@@ -35,9 +35,16 @@ class VDPath:
         return hash(self.path)
 
     def __eq__(self, other):
-        if isinstance(other, VDPath):
+        if isinstance(other, (VDPath, VDLink)):
             return self.path == other.path
+        if isinstance(other, VDGlob):
+            return False
         return self.path.expanduser() == Path(other).expanduser()
+
+    def __lt__(self, other):
+        if isinstance(other, (VDPath, VDLink)):
+            return self.path < other.path
+        return self.txt < other
 
     @property
     def text(self):
@@ -133,6 +140,11 @@ class VDLink:
         if isinstance(other, VDLink):
             return (self.lnk, self.ref) == (other.lnk, other.ref)
         return self.lnk == other
+
+    def __lt__(self, other):
+        if isinstance(other, (VDPath, VDLink)):
+            return self.path < other.path
+        return self.txt < other
 
     @property
     def text(self):

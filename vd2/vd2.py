@@ -278,9 +278,12 @@ def step_construct_raw_actions(base, new, delta_by_iii):
 
     # Index newly added paths as TrackAction
     for item in delta_by_iii[None]:
-        ticket_pool.register(
-                ('track', Path(item.txt)),
-                TrackAction(item.txt))
+        if isinstance(item, VDGlob):
+            ticket_pool.register(TrackAction(item))
+        else:
+            ticket_pool.register(
+                    ('track', Path(item.path)),
+                    TrackAction(item.path))
 
     del delta_by_iii[None]
 
@@ -297,7 +300,7 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         if not change.dst:
             ticket_pool.register(
                     ('delete', src),
-                    DeleteAction(src.txt))
+                    DeleteAction(src.path))
 
         for dst in change.dst:
             if dst.mark not in '.#' and src.path != dst.path:
@@ -319,18 +322,18 @@ def step_construct_raw_actions(base, new, delta_by_iii):
                         }.get(dst.mark)
                 ticket_pool.register(
                         (tag, src),
-                        action_cls(src.txt))
+                        action_cls(src.path))
 
             elif src == dst:
                 ticket_pool.register(
                         ('nop', src),
-                        NoAction(src.txt))
+                        NoAction(src.path))
 
             else:
                 ticket_pool.register(
                         ('from', src),
                         ('to', dst),
-                        CopyAction(src.txt, dst.txt))
+                        CopyAction(src.path, dst.path))
 
     if logger.has_error():
         return (sys.exit, 1)
