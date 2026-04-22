@@ -77,11 +77,6 @@ def FUNC_LINE():
 # Specialized Utilities {
 # -----------------------------------------------------------------------------
 
-@functools.lru_cache
-def screen_width():
-    return shutil.get_terminal_size().columns
-
-
 def hint_text():
     sepline = '# ' + ('=' * 77)
 
