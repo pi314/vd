@@ -18,8 +18,25 @@ if !g:vd_disable_default_options
 endif
 
 if !g:vd_disable_key_mappings
+    function! VDMoveToLineStart ()
+        if match(getline('.'), '\v^[*+@]?\d+') < 0
+            normal! ^
+            return
+        endif
+
+        let col0 = col('.')
+        normal! ^W
+        let col1 = col('.')
+
+        if col0 == 1
+            return
+        elseif col0 <= col1
+            normal! ^
+        endif
+    endfunction
+
     " Cursor movement
-    nnoremap <expr> <Plug>(VDMoveToLineStart) ((col('.') == 1) ? '^W' : '^')
+    nnoremap <Plug>(VDMoveToLineStart) :call VDMoveToLineStart()<CR>
     nnoremap <Plug>(VDKeyH) HW
     nnoremap <Plug>(VDKeyM) MW
     nnoremap <Plug>(VDKeyL) LW
