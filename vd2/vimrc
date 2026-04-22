@@ -59,19 +59,19 @@ if !g:vd_disable_key_mappings
     function! VDToggleMarkResolve ()
         call VDToggleMark('@')
     endfunction
-    nnoremap <silent> @ :call VDToggleMarkResolve()<CR>
+    nnoremap <silent> @@ :call VDToggleMarkResolve()<CR>
 
     " Toggle + and * mark
     function! VDToggleMarkExpand ()
         call VDToggleMark('+*')
     endfunction
-    nnoremap <silent> + :call VDToggleMarkExpand()<CR>
+    nnoremap <silent> ++ :call VDToggleMarkExpand()<CR>
 
     " Toggle # mark
     function! VDToggleMarkUntrack ()
         call VDToggleMark('#')
     endfunction
-    nnoremap <silent> # :call VDToggleMarkUntrack()<CR>
+    nnoremap <silent> ## :call VDToggleMarkUntrack()<CR>
 endif
 
 if !g:vd_disable_syntax_highlight
