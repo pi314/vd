@@ -7,28 +7,39 @@ let g:vd_disable_key_mappings = get(g:, 'vd_disable_key_mappings', v:false)
 let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:false)
 
 let g:tcomment#options = {'whitespace': 'no'}
-set commentstring=#%s
+setlocal commentstring=#%s
 
 " =============================================================================
 
 if !g:vd_disable_default_options
     " Turn off line number for not interferring with item index
-    set nonu
-    set nowrap
+    setlocal nonu
+    setlocal nowrap
 endif
 
 if !g:vd_disable_key_mappings
     " Cursor movement
-    nnoremap <expr> ^ ((col('.') == 1) ? '^W' : '^')
-    nnoremap H HW
-    nnoremap M MW
-    nnoremap L LW
-    nnoremap G GW
+    nnoremap <expr> <Plug>(VDMoveToLineStart) ((col('.') == 1) ? '^W' : '^')
+    nnoremap <Plug>(VDKeyH) HW
+    nnoremap <Plug>(VDKeyM) MW
+    nnoremap <Plug>(VDKeyL) LW
+    nnoremap <Plug>(VDKeyG) GW
 
-    " Rename item
-    nnoremap cc ^WC
-    nnoremap S ^WC
-    nnoremap <expr> I ((col('.') == 1) ? 'I' : '^Wi')
+    " Edit item
+    nnoremap <Plug>(VDEditWholeLine) ^WC
+    nnoremap <expr> <Plug>(VDEditAtStartOfLine) ((col('.') == 1) ? 'I' : '^Wi')
+
+    " Cursor movement
+    nnoremap ^ <Plug>(VDMoveToLineStart)
+    nnoremap H <Plug>(VDKeyH)
+    nnoremap M <Plug>(VDKeyM)
+    nnoremap L <Plug>(VDKeyL)
+    nnoremap G <Plug>(VDKeyG)
+
+    " Edit item
+    nnoremap cc <Plug>(VDEditWholeLine)
+    nnoremap S  <Plug>(VDEditWholeLine)
+    nnoremap I  <Plug>(VDEditAtStartOfLine)
 
     function! VDToggleMark (mark)
         let line = getline('.')
@@ -46,7 +57,6 @@ if !g:vd_disable_key_mappings
                 else
                     call setline('.', a:mark[i + 1] . strpart(line, 1))
                 endif
-
                 return
             endif
         endfor
@@ -76,9 +86,9 @@ endif
 
 if !g:vd_disable_syntax_highlight
     if v:version >= 900
-        set listchars=tab:\\x20│\\x20
+        setlocal listchars=tab:\\x20│\\x20
     else
-        set listchars=tab:\ │
+        setlocal listchars=tab:\ │
     endif
 
     syntax region VDComment start=/^#/ end=/$/ oneline keepend
