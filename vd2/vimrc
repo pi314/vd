@@ -120,7 +120,6 @@ if !g:vd_disable_syntax_highlight
         let s:ctermfg = exists('s:fg') ? ('ctermfg='. string(s:fg)) : ''
         let s:ctermbg = exists('s:bg') ? ('ctermbg='. string(s:bg)) : ''
 
-        " exec join(['highlight', s:hlgroup, s:cterm, s:ctermfg, s:ctermbg])
         let s:ls_colors[s:glob] = [s:cterm, s:ctermfg, s:ctermbg]
     endfor
 
