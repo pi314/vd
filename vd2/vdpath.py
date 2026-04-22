@@ -25,14 +25,24 @@ class VDGlob:
 
 class VDPath:
     def __init__(self, text):
-        self.txt = text
-        self.path = Path(text.rstrip('|/'))
+        if isinstance(text, VDPath):
+            self.txt = text.txt
+            self.path = Path(text.path)
+        elif isinstance(text, Path):
+            self.txt = str(text)
+            self.path = Path(text)
+        else:
+            self.txt = text
+            self.path = Path(text.rstrip('|/'))
 
     def __repr__(self):
         return f'VDPath({self.text})'
 
     def __hash__(self):
         return hash(self.path)
+
+    def __str__(self):
+        return self.txt
 
     def __eq__(self, other):
         if isinstance(other, (VDPath, VDLink)):
@@ -121,12 +131,16 @@ class VDPath:
 
 
 class VDLink:
-    def __init__(self, lnk_text, ref_text=None):
-        self.lnk_text = lnk_text
+    def __init__(self, lnk, ref=None):
+        self.lnk_text = str(lnk)
         self.lnk = VDPath(self.lnk_text)
 
-        self.ref_text = ref_text or os.readlink(self.lnk.path)
-        self.ref = VDPath(self.ref_text)
+        if isinstance(ref, (VDPath, Path)):
+            self.ref_text = ref
+            self.ref = VDPath(self.ref_text)
+        else:
+            self.ref_text = ref or os.readlink(self.lnk.path)
+            self.ref = VDPath(self.ref_text)
 
     def __repr__(self):
         return f'VDLink({self.lnk} -> {self.ref})'

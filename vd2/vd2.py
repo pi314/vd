@@ -324,15 +324,16 @@ def step_construct_raw_actions(base, new, delta_by_iii):
                         ('nop', src),
                         NoAction(src.path))
 
-            elif src.path.islink and dst.path.islink:
-                if src.lnk == dst.lnk:
+            elif isinstance(src.path, VDLink) and isinstance(dst.path, VDLink):
+                if src.lnk != dst.lnk:
                     ticket_pool.register(
-                            ('relink', src),
-                            RelinkAction(src.lnk, dst.ref))
-                else:
-                    print(repr(src.lnk))
-                    print(repr(dst.lnk))
-                    sys.exit(1)
+                            ('from', src),
+                            ('to', dst),
+                            CopyAction(src.path, dst.path))
+                if src.ref != dst.ref:
+                    ticket_pool.register(
+                            ('relink', dst),
+                            RelinkAction(VDLink(dst.lnk, src.ref), dst.ref))
 
             else:
                 ticket_pool.register(
@@ -504,6 +505,8 @@ def step_confirm_action_list(base, new, ticket_pool):
             return (4, action.targets[0])
         elif isinstance(action, TrackAction):
             return (5, action.targets[0])
+        elif isinstance(action, RelinkAction):
+            return (6, action.targets[0])
         return (99, action.targets[0])
 
     action_list = sorted(action_list, key=action_sort_key)

@@ -393,7 +393,10 @@ class RelinkAction(FSAction):
     def preview(self):
         logger.info(yellow('Relink:') + yellow('[') + self.src.txt + yellow(']'))
 
-        ref = VDPath(os.readlink(self.src.path))
+        if isinstance(self.src, VDLink):
+            ref = self.src.ref
+        else:
+            ref = VDPath(os.readlink(self.src.path))
         color = yellow if ref.exists else red
         logger.info(yellow('├──x──►') + color('[') + ref.txt + color(']'))
 
