@@ -75,7 +75,11 @@ if !g:vd_disable_key_mappings
 endif
 
 if !g:vd_disable_syntax_highlight
-    set listchars=tab:\\x20│\\x20
+    if v:version >= 900
+        set listchars=tab:\\x20│\\x20
+    else
+        set listchars=tab:\ │
+    endif
 
     syntax region VDComment start=/^#/ end=/$/ oneline
     highlight link VDComment Comment
@@ -136,28 +140,38 @@ if !g:vd_disable_syntax_highlight
     syntax match VDFilePath /\v\t@<=.+$/ contained containedin=VDFileItem
 
     syntax match VDDirPath /\v\t@<=.+$/ contained containedin=VDDirItem
-    exec join(['highlight', 'VDDirPath', ] + s:ls_colors['di'])
+    if has_key(s:ls_colors, 'di')
+        exec join(['highlight', 'VDDirPath', ] + s:ls_colors['di'])
+    endif
 
     syntax match VDExecFilePath /\v\t@<=.+$/ contained containedin=VDExecFileItem
-    exec join(['highlight', 'VDExecFilePath', ] + s:ls_colors['ex'])
+    if has_key(s:ls_colors, 'ex')
+        exec join(['highlight', 'VDExecFilePath', ] + s:ls_colors['ex'])
+    endif
 
     syntax match VDLinkArrow /\v *\V->\v */ containedin=VDLinkItem,VDDeadLinkItem
     highlight VDLinkArrow ctermfg=240 " TBD
 
     syntax match VDLinkPath /\v\t@<=\zs.+[^ ]\ze( *\V->\v)@=/ contained containedin=VDLinkItem,VDDeadLinkItem
     highlight VDLinkPath ctermfg=220 " TBD
-    exec join(['highlight', 'VDLinkPath', ] + s:ls_colors['ln'])
+    if has_key(s:ls_colors, 'ln')
+        exec join(['highlight', 'VDLinkPath', ] + s:ls_colors['ln'])
+    endif
 
     syntax match VDLinkTarget /\v(\t.+ *\V->\v *)@<=[^ ].+$/ contained containedin=VDLinkItem
 
     syntax match VDDeadLinkPath /\v\t@<=\zs.+[^ ]\ze( *\V->\v)@=/ contained containedin=VDDeadLinkItem
-    exec join(['highlight', 'VDDeadLinkPath', ] + s:ls_colors['ln'])
+    if has_key(s:ls_colors, 'ln')
+        exec join(['highlight', 'VDDeadLinkPath', ] + s:ls_colors['ln'])
+    endif
 
     syntax match VDDeadLinkTarget /\v(\t.+ *\V->\v *)@<=[^ ].+$/ contained containedin=VDDeadLinkItem
     highlight VDDeadLinkTarget ctermfg=9
 
     syntax match VDFifoPath /\v\t@<=.+[^|]/ contained containedin=VDFifoItem
-    exec join(['highlight', 'VDFifoPath', ] + s:ls_colors['pi'])
+    if has_key(s:ls_colors, 'pi')
+        exec join(['highlight', 'VDFifoPath', ] + s:ls_colors['pi'])
+    endif
 
     syntax match VDFifoSymbol /|$/ contained containedin=VDFifoItem
     highlight VDFifoSymbol ctermfg=3
