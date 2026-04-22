@@ -119,6 +119,10 @@ def hint_text():
 def step_vim_edit_inventory(base, inventory):
     logger.debug(FUNC_LINE())
 
+    if not inventory:
+        logger.info('No targets to edit')
+        return (sys.exit, 0)
+
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='.vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
@@ -737,7 +741,7 @@ def main():
         sys.exit(1)
 
     if not inventory:
-        info('No targets to edit')
+        logger.info('No targets to edit')
         sys.exit(0)
 
     inventory.freeze()

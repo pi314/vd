@@ -59,6 +59,9 @@ class Inventory:
     def __len__(self):
         return len(self.content)
 
+    def __bool__(self):
+        return bool(self.content)
+
     def __iter__(self):
         return iter(self.content)
 
