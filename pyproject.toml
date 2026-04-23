@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 
 [project]
-name = "vd2"
+name = "vd"
 dynamic = ["version"]
 authors = [
   { name="Cychih", email="michael66230@gmail.com" },
@@ -25,11 +25,11 @@ classifiers = [
 
 
 [tool.hatch.version]
-path = "vd2/__init__.py"
+path = "vd/__init__.py"
 
 
 [project.scripts]
-vd2 = "vd2:main"
+vd = "vd:main"
 
 
 [project.urls]
@@ -38,7 +38,7 @@ Homepage = "https://github.com/pi314/vd"
 
 [tool.coverage.run]
 branch = true
-source = ["vd2/"]
+source = ["vd/"]
 command_line = "-m unittest --verbose"
 
 
