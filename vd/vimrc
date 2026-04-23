@@ -1,0 +1,209 @@
+" =============================================================================
+" vd vimrc
+" =============================================================================
+
+let g:vd_disable_default_options = get(g:, 'vd_disable_default_options', v:false)
+let g:vd_disable_key_mappings = get(g:, 'vd_disable_key_mappings', v:false)
+let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:false)
+
+let g:tcomment#options = {'whitespace': 'no'}
+setlocal commentstring=#%s
+
+" =============================================================================
+
+if !g:vd_disable_default_options
+    " Turn off line number for not interferring with item index
+    setlocal nonu
+    setlocal nowrap
+endif
+
+if !g:vd_disable_key_mappings
+    function! VDMoveToLineStart ()
+        if match(getline('.'), '\v^[*+@]?\d+') < 0
+            normal! ^
+            return
+        endif
+
+        let col0 = col('.')
+        normal! ^W
+        let col1 = col('.')
+
+        if col0 == 1
+            return
+        elseif col0 <= col1
+            normal! ^
+        endif
+    endfunction
+
+    " Cursor movement
+    nnoremap <Plug>(VDMoveToLineStart) :call VDMoveToLineStart()<CR>
+    nnoremap <Plug>(VDKeyH) HW
+    nnoremap <Plug>(VDKeyM) MW
+    nnoremap <Plug>(VDKeyL) LW
+    nnoremap <Plug>(VDKeyG) GW
+
+    " Edit item
+    nnoremap <Plug>(VDEditWholeLine) ^WC
+    nnoremap <expr> <Plug>(VDEditAtStartOfLine) ((col('.') == 1) ? 'I' : '^Wi')
+
+    " Cursor movement
+    nnoremap ^ <Plug>(VDMoveToLineStart)
+    nnoremap H <Plug>(VDKeyH)
+    nnoremap M <Plug>(VDKeyM)
+    nnoremap L <Plug>(VDKeyL)
+    nnoremap G <Plug>(VDKeyG)
+
+    " Edit item
+    nnoremap cc <Plug>(VDEditWholeLine)
+    nnoremap S  <Plug>(VDEditWholeLine)
+    nnoremap I  <Plug>(VDEditAtStartOfLine)
+
+    function! VDToggleMark (mark)
+        let line = getline('.')
+        if empty(line)
+            return
+        endif
+
+        let mark_len = len(a:mark)
+
+        for i in range(len(a:mark))
+            if line[0] == a:mark[i]
+                if i == mark_len - 1
+                    normal! h
+                    call setline('.', strpart(line, 1))
+                else
+                    call setline('.', a:mark[i + 1] . strpart(line, 1))
+                endif
+                return
+            endif
+        endfor
+
+        call setline('.', a:mark[0] . line)
+        normal! l
+    endfunction
+
+    " Toggle @ mark
+    function! VDToggleMarkResolve ()
+        call VDToggleMark('@')
+    endfunction
+    nnoremap <silent> @@ :call VDToggleMarkResolve()<CR>
+
+    " Toggle + and * mark
+    function! VDToggleMarkExpand ()
+        call VDToggleMark('+*')
+    endfunction
+    nnoremap <silent> ++ :call VDToggleMarkExpand()<CR>
+
+    " Toggle # mark
+    function! VDToggleMarkUntrack ()
+        call VDToggleMark('#')
+    endfunction
+    nnoremap <silent> ## :call VDToggleMarkUntrack()<CR>
+endif
+
+if !g:vd_disable_syntax_highlight
+    if v:version >= 900
+        setlocal listchars=tab:\\x20│\\x20
+    else
+        setlocal listchars=tab:\ │
+    endif
+
+    syntax region VDComment start=/^#/ end=/$/ oneline keepend
+    highlight link VDComment Comment
+
+    " Parse $LS_COLORS for basic highlighting
+    let s:ls_colors = {}
+    for s:entry in split($LS_COLORS, ':')
+        let s:m = matchlist(s:entry, '\v^(\w+)\=([0-9;]+)$')
+        let [s:unused, s:glob, s:code; s:unused] = s:m
+
+        let s:code_list = split(s:code, ';')
+        call map(s:code_list, 'str2nr(v:val, 10)')
+
+        while !empty(s:code_list)
+            if s:code_list[0] == 1
+                let s:attr = 'bold'
+
+            elseif 30 <= s:code_list[0] && s:code_list[0] <= 37
+                let s:fg = (s:code_list[0] - 30)
+
+            elseif 40 <= s:code_list[0] && s:code_list[0] <= 47
+                let s:bg = (s:code_list[0] - 40)
+
+            elseif s:code_list[0:1] == [38, 5]
+                let s:code_list = s:code_list[2:]
+                let s:fg = s:code_list[0]
+
+            elseif s:code_list[0:1] == [48, 5]
+                let s:code_list = s:code_list[2:]
+                let s:bg = s:code_list[0]
+
+            endif
+
+            call remove(s:code_list, 0)
+        endwhile
+
+        let s:cterm = exists('s:attr') ? ('cterm='. s:attr) : ''
+        let s:ctermfg = exists('s:fg') ? ('ctermfg='. string(s:fg)) : ''
+        let s:ctermbg = exists('s:bg') ? ('ctermbg='. string(s:bg)) : ''
+
+        let s:ls_colors[s:glob] = [s:cterm, s:ctermfg, s:ctermbg]
+    endfor
+
+    syntax region VDInventoryItem start=/^\v[+*@]?\d+/ end=/$/ oneline keepend
+
+    highlight link VDIII Number
+    syntax match VDIII /\v(^\D?)@<=\zs(\d+)\ze\t/ contained containedin=VDInventoryItem
+                \ nextgroup=VDFileItem,VDDirItem,VDExecFileItem,VDLinkItem,VDDeadLinkItem,VDFileItem,VDErrorItem
+
+    syntax match VDFileItem     /\v(^\D?\d+0\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDDirItem      /\v(^\D?\d+1\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDExecFileItem /\v(^\D?\d+2\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDLinkItem     /\v(^\D?\d+3\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDDeadLinkItem /\v(^\D?\d+4\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDFifoItem     /\v(^\D?\d+5\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+    syntax match VDErrorItem    /\v(^\D?\d+9\t)@<=\zs(.+)\ze$/ contained containedin=VDInventoryItem
+
+    syntax match VDFilePath /\v\t@<=.+$/ contained containedin=VDFileItem
+
+    syntax match VDDirPath /\v\t@<=.+$/ contained containedin=VDDirItem
+    if has_key(s:ls_colors, 'di')
+        exec join(['highlight', 'VDDirPath', ] + s:ls_colors['di'])
+    endif
+
+    syntax match VDExecFilePath /\v\t@<=.+$/ contained containedin=VDExecFileItem
+    if has_key(s:ls_colors, 'ex')
+        exec join(['highlight', 'VDExecFilePath', ] + s:ls_colors['ex'])
+    endif
+
+    syntax match VDLinkArrow /\v *\V->\v */ containedin=VDLinkItem,VDDeadLinkItem
+    highlight VDLinkArrow ctermfg=240 " TBD
+
+    syntax match VDLinkPath /\v\t@<=\zs.+[^ ]\ze( *\V->\v)@=/ contained containedin=VDLinkItem,VDDeadLinkItem
+    highlight VDLinkPath ctermfg=220 " TBD
+    if has_key(s:ls_colors, 'ln')
+        exec join(['highlight', 'VDLinkPath', ] + s:ls_colors['ln'])
+    endif
+
+    syntax match VDLinkTarget /\v(\t.+ *\V->\v *)@<=[^ ].+$/ contained containedin=VDLinkItem
+
+    syntax match VDDeadLinkPath /\v\t@<=\zs.+[^ ]\ze( *\V->\v)@=/ contained containedin=VDDeadLinkItem
+    if has_key(s:ls_colors, 'ln')
+        exec join(['highlight', 'VDDeadLinkPath', ] + s:ls_colors['ln'])
+    endif
+
+    syntax match VDDeadLinkTarget /\v(\t.+ *\V->\v *)@<=[^ ].+$/ contained containedin=VDDeadLinkItem
+    highlight VDDeadLinkTarget ctermfg=9
+
+    syntax match VDFifoPath /\v\t@<=.+[^|]/ contained containedin=VDFifoItem
+    if has_key(s:ls_colors, 'pi')
+        exec join(['highlight', 'VDFifoPath', ] + s:ls_colors['pi'])
+    endif
+
+    syntax match VDFifoSymbol /|$/ contained containedin=VDFifoItem
+    highlight VDFifoSymbol ctermfg=3
+
+    syntax match VDErrorFilePath /\v\t@<=.+$/ contained containedin=VDErrorItem
+    highlight VDErrorFilePath ctermfg=black ctermbg=red
+
+endif
