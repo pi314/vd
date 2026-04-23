@@ -35,28 +35,28 @@ if !g:vd_disable_key_mappings
         endif
     endfunction
 
-    " Cursor movement
+    " Cursor movement API
     nnoremap <Plug>(VDMoveToLineStart) :call VDMoveToLineStart()<CR>
     nnoremap <Plug>(VDKeyH) HW
     nnoremap <Plug>(VDKeyM) MW
     nnoremap <Plug>(VDKeyL) LW
     nnoremap <Plug>(VDKeyG) GW
 
-    " Edit item
+    " Item editing API
     nnoremap <Plug>(VDEditWholeLine) ^WC
     nnoremap <expr> <Plug>(VDEditAtStartOfLine) ((col('.') == 1) ? 'I' : '^Wi')
 
-    " Cursor movement
-    nnoremap ^ <Plug>(VDMoveToLineStart)
-    nnoremap H <Plug>(VDKeyH)
-    nnoremap M <Plug>(VDKeyM)
-    nnoremap L <Plug>(VDKeyL)
-    nnoremap G <Plug>(VDKeyG)
+    " Cursor movement default binding
+    nmap ^ <Plug>(VDMoveToLineStart)
+    nmap H <Plug>(VDKeyH)
+    nmap M <Plug>(VDKeyM)
+    nmap L <Plug>(VDKeyL)
+    nmap G <Plug>(VDKeyG)
 
-    " Edit item
-    nnoremap cc <Plug>(VDEditWholeLine)
-    nnoremap S  <Plug>(VDEditWholeLine)
-    nnoremap I  <Plug>(VDEditAtStartOfLine)
+    " Item editing default binding
+    nmap cc <Plug>(VDEditWholeLine)
+    nmap S  <Plug>(VDEditWholeLine)
+    nmap I  <Plug>(VDEditAtStartOfLine)
 
     function! VDToggleMark (mark)
         let line = getline('.')
