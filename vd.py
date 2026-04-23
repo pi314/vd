@@ -22,7 +22,7 @@
 #TODO: Provide directives for adding new entries like {file} {dir}
 #====> let user use :r !find themself?
 
-__version__ = '0.0.0'
+__version__ = '0.0.1'
 
 
 # =============================================================================
