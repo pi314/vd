@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 
-# Mandatary
-#TODO: Rethink about folder and files
-
 # Vim related
-#TODO: Refine syntax highlighting,
 #TODO: Check if iii.type enum definition could be reused for vim and python
 #TODO: Put "widgets" on the top area, move cursor onto them and press to activate
 
 # Enhancement
 #TODO: Define some commands like ":sort by date" ?
 ###==> ":uniq" ?
+#TODO: Shell command expansion
 
 
 # =============================================================================
