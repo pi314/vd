@@ -3,6 +3,8 @@ import threading
 
 from .iroiro import *
 
+options = None
+
 
 def log(tag, *args, **kwargs):
     if not args and not kwargs:
@@ -31,6 +33,8 @@ def stdout(*args, **kwargs):
 
 
 def debug(*args, **kwargs):
+    if not options.debug:
+        return
     log('debug', *args, **kwargs)
 
 

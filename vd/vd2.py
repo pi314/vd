@@ -163,7 +163,7 @@ def step_vim_edit_inventory(base, inventory):
         # Move cursor to the line above first inventory item
         cmd.append('+normal ' + chr(0x7d))
 
-        logger.cmd(cmd, tag='debug')
+        logger.cmd(cmd)
         sub.call(cmd, stdin=open('/dev/tty'))
         print()
 
@@ -661,6 +661,8 @@ def edit_vd_vimrc():
 # =============================================================================
 
 def main():
+    logger.options = options
+
     parser = argparse.ArgumentParser(
         prog='vd',
         description='An (arguably) better vidir',
@@ -697,8 +699,7 @@ def main():
     if args.vimrc:
         sys.exit(edit_vd_vimrc())
 
-    # options.debug = args.debug
-    options.debug = True
+    options.debug = args.debug
     logger.debug(FUNC_LINE(), options)
 
     # =========================================================================
