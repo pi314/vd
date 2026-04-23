@@ -180,9 +180,7 @@ def step_vim_edit_inventory(base, inventory):
                 if rec.match(r'^([#+*@]?) *(\d+)\t+(.*)$'):
                     mark, iii, path = rec.groups()
 
-                    if '*' in path:
-                        path = VDGlob(path)
-                    elif '->' in path:
+                    if '->' in path:
                         a, b = path.split('->')
                         a = a.rstrip()
                         b = b.lstrip()
