@@ -27,13 +27,13 @@ class VDPath:
     def __init__(self, text):
         if isinstance(text, VDPath):
             self.txt = text.txt
-            self.path = Path(text.path)
+            self.path = Path(expanduser(text.path))
         elif isinstance(text, Path):
             self.txt = str(text)
-            self.path = Path(text)
+            self.path = Path(text).expanduser()
         else:
             self.txt = text
-            self.path = Path(text.rstrip('|/'))
+            self.path = Path(expanduser(text.rstrip('|/')))
 
     def __repr__(self):
         return f'VDPath({self.text})'
@@ -49,7 +49,7 @@ class VDPath:
             return self.path == other.path
         if isinstance(other, VDGlob):
             return False
-        return self.path.expanduser() == Path(other).expanduser()
+        return self.path == Path(other).expanduser()
 
     def __lt__(self, other):
         if isinstance(other, (VDPath, VDLink)):
