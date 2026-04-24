@@ -23,25 +23,26 @@ With a few different design choices:
 *   `vdir` supports editing symbolic links
 
 
-## Examples (shell)
-
+Examples (shell)
+-------------------------------------------------------------------------------
 Edit the current diretory:
 ```console
-$ vdir
+sh$ vdir
 ```
 
 Manage certain files:
 ```console
-$ vdir *.txt
+sh$ vdir *.txt
 ```
 
 Manage found files:
 ```console
-$ fd --type f | vdir
+sh$ fd --type f | vdir
 ```
 
 
-## Examples (vim)
+Examples (vim)
+-------------------------------------------------------------------------------
 A `vdir`'s vim session looks like this:
 
 ```console
@@ -77,3 +78,13 @@ Continue? [(Y)es / (n)o / (e)dit / (r)edo] _
 *   `ctrl`+`c` to cancel the edit if you're scared of the change
 *   `e` to continue editing
 *   `r` to restart with initial contents
+
+
+Installation
+-------------------------------------------------------------------------------
+
+https://pypi.org/project/vdir/
+
+```console
+sh$ pipx install vdir
+```
