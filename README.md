@@ -8,7 +8,7 @@ With a few different design choices:
 
 *   `vdir` always prompts before applying changes
 
-*   `vdir` don't integrate with `git`
+*   `vdir` doesn't integrate with `git` (for not accidentally messing up your staging area)
 
 *   `vdir` displays an (arguably) pretty-looking preview of the changes
 
@@ -73,7 +73,7 @@ Continue? [(Y)es / (n)o / (e)dit / (r)edo] _
 ```
 
 *   `y` to apply and continue with another `vim` session
-*   `enter` to apply and quit
+*   Empty input to apply and quit
 *   `n` to cancel the edit
 *   `ctrl`+`c` to cancel the edit if you're scared of the change
 *   `e` to continue editing
@@ -83,7 +83,8 @@ Continue? [(Y)es / (n)o / (e)dit / (r)edo] _
 Installation
 -------------------------------------------------------------------------------
 
-https://pypi.org/project/vdir/
+[![vdir](https://img.shields.io/pypi/v/vdir)](https://pypi.org/project/vdir/)
+
 
 ```console
 sh$ pipx install vdir
