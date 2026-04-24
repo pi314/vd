@@ -45,7 +45,7 @@ options = argparse.Namespace(
         debug=False,
         )
 
-VD_VIMRC_PATH = Path.home() / '.config' / 'vd' / 'vd2.vimrc'
+VDIR_VIMRC_PATH = Path.home() / '.config' / 'vdir' / 'vdir.vimrc'
 
 # -----------------------------------------------------------------------------
 # Global variables }
@@ -87,11 +87,11 @@ def hint_text():
             "# - Add a '@' before the id to resolve the soft link.",
             ]
 
-    if os.path.isfile(VD_VIMRC_PATH):
-        ret.append('# - Configure hotkeys in ' + shrinkuser(VD_VIMRC_PATH))
+    if os.path.isfile(VDIR_VIMRC_PATH):
+        ret.append('# - Configure hotkeys in ' + shrinkuser(VDIR_VIMRC_PATH))
     else:
         ret.append('# - Setup default vd.vimrc with')
-        ret.append('#   $ vd --vimrc')
+        ret.append('#   $ vdir --vimrc')
 
     ret.append(sepline)
 
@@ -145,11 +145,11 @@ def step_vim_edit_inventory(base, inventory):
         # Invoke vim to edit item list
         cmd = ['vim', tf.name]
 
-        cmd.append('+set ft=vd')
+        cmd.append('+set ft=vdir')
 
         # Source vd.vimrc
-        if os.path.isfile(VD_VIMRC_PATH):
-            cmd += ['+source ' + str(VD_VIMRC_PATH)]
+        if os.path.isfile(VDIR_VIMRC_PATH):
+            cmd += ['+source ' + str(VDIR_VIMRC_PATH)]
 
         cmd += ['+source ' + str(Path(__file__).parent / 'vimrc')]
 
@@ -619,16 +619,16 @@ def edit_vd_vimrc():
     logger.debug()
     logger.debug(FUNC_LINE())
 
-    VD_VIMRC_PATH.parent.mkdir(parents=True, exist_ok=True)
+    VDIR_VIMRC_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    if VD_VIMRC_PATH.exists() and not VD_VIMRC_PATH.is_file():
-        logger.error(VD_VIMRC_PATH, 'exists and it\'s not a file')
+    if VDIR_VIMRC_PATH.exists() and not VDIR_VIMRC_PATH.is_file():
+        logger.error(VDIR_VIMRC_PATH, 'exists and it\'s not a file')
         return 1
 
-    print(VD_VIMRC_PATH)
+    print(VDIR_VIMRC_PATH)
 
-    if VD_VIMRC_PATH.exists():
-        return sub.call(['vim', VD_VIMRC_PATH])
+    if VDIR_VIMRC_PATH.exists():
+        return sub.call(['vim', VDIR_VIMRC_PATH])
 
     # Deploy vd vimrc if user didn't have one
     # Use tempfile so if user don't save the file, it won't exist
@@ -639,7 +639,7 @@ def edit_vd_vimrc():
                 f.write(vimrc.read())
 
         return sub.call([
-            'vim', VD_VIMRC_PATH,
+            'vim', VDIR_VIMRC_PATH,
             '+0read ' + tf.name, # Read the content into buffer
             '+$d_', # Remove the extra empty line with the black hole register
             '+normal gg', # Move cursor back to 1st line
@@ -659,13 +659,13 @@ def main():
     logger.options = options
 
     parser = argparse.ArgumentParser(
-        prog='vd',
+        prog='vdir',
         description='An (arguably) better vidir',
         epilog='\n'.join((
             'Examples:',
-            magenta('$') + ' vd',
-            magenta('$') + ' vd -a',
-            magenta('$') + ' find . -type f | vd',
+            magenta('$') + ' vdir',
+            magenta('$') + ' vdir -a',
+            magenta('$') + ' find . -type f | vdir',
             )),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         )
@@ -676,7 +676,7 @@ def main():
 
     parser.add_argument('--vimrc', action='store_true',
             default=False,
-            help='Edit or create the vimrc for vd')
+            help='Edit or create the vimrc for vdir')
 
     parser.add_argument('--debug', action='store_true',
             default=False,
@@ -793,7 +793,3 @@ def main():
             logger.errorflush()
 
             raise e
-
-
-if __name__ == '__main__':
-    sys.exit(main())

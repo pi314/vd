@@ -1,4 +1,4 @@
-VD - Edit directory with vim
+VDIR - Edit directory with vim
 ===============================================================================
 
 Heavily inspired by `vidir` from [moreutils](https://joeyh.name/code/moreutils/) and
@@ -6,43 +6,43 @@ Heavily inspired by `vidir` from [moreutils](https://joeyh.name/code/moreutils/)
 
 With a few different design choices:
 
-*   `vd` always prompts before applying changes
+*   `vdir` always prompts before applying changes
 
-*   `vd` don't integrate with `git`
+*   `vdir` don't integrate with `git`
 
-*   `vd` displays an (arguably) pretty-looking preview of the changes
+*   `vdir` displays an (arguably) pretty-looking preview of the changes
 
-*   `vd` pads sequence number to same width for visual block operations
+*   `vdir` pads sequence number to same width for visual block operations
 
-*   `vd` references `LS_COLORS` for coloring
+*   `vdir` references `LS_COLORS` for coloring
 
-*   `vd` supports stage/unstage items dynamically
+*   `vdir` supports stage/unstage items dynamically
 
-*   `vd` treats symbolic links as files instead of resolving them
+*   `vdir` treats symbolic links as files instead of resolving them
 
-*   `vd` supports editing symbolic links
+*   `vdir` supports editing symbolic links
 
 
 ## Examples (shell)
 
 Edit the current diretory:
 ```console
-$ vd
+$ vdir
 ```
 
 Manage certain files:
 ```console
-$ vd *.txt
+$ vdir *.txt
 ```
 
 Manage found files:
 ```console
-$ fd --type f | vd
+$ fd --type f | vdir
 ```
 
 
 ## Examples (vim)
-A `vd`'s vim session looks like this:
+A `vdir`'s vim session looks like this:
 
 ```console
 # ═════════════════════════════════════════════════════════════════════════════
@@ -52,18 +52,18 @@ A `vd`'s vim session looks like this:
 # - Add a '+' before the id to expand non-hidden items under the directory.
 # - Add a '*' before the id to expand all items under the directory.
 # - Add a '@' before the id to resolve the soft link.
-# - Setup default vd.vimrc with
-#   $ vd --vimrc
+# - Setup default vdir.vimrc with
+#   $ vdir --vimrc
 # ═════════════════════════════════════════════════════════════════════════════
 
 110 ││ LICENSE
 120 ││ README.md
 131 ││ __pycache__/
 140 ││ pyproject.toml
-151 ││ vd/
+151 ││ vdir/
 ```
 
-Edit the content, save and quit, and `vd` prompts you the changes like this:
+Edit the content, save and quit, and `vdir` prompts you the changes like this:
 
 ```
 [info] Delete:[LICENSE]
