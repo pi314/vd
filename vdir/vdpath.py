@@ -166,3 +166,12 @@ class VDLink:
 
     def __getattr__(self, attr):
         return getattr(self.lnk, attr)
+
+
+class VDShCmd:
+    def __init__(self, cmd_str, comment=False):
+        self.cmd = cmd_str
+        self.comment = comment
+
+    def __repr__(self):
+        return f'VDShCmd({self.cmd}, comment={self.comment})'

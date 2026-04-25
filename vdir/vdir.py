@@ -168,12 +168,18 @@ def step_vim_edit_inventory(base, inventory):
         # Parse tempfile content
         new = Inventory()
         with open(tf.name, mode='r', encoding='utf8') as f:
+            in_banner = True
             for line in f.readlines():
                 if not line:
                     new.append(None)
                     continue
 
                 rec = rere(line)
+
+                if in_banner and line.startswith('#'):
+                    continue
+
+                in_banner = False
 
                 if rec.fullmatch(r'([#+*@]?) *(\d+)\t+(.*)'):
                     mark, iii, path = rec.groups()
@@ -187,6 +193,10 @@ def step_vim_edit_inventory(base, inventory):
                         path = VDPath(path)
 
                     new.append(path, iii=iii, mark=mark)
+
+                elif rec.fullmatch(r'(# *)?\$ +(.+)'):
+                    print(VDShCmd(rec.group(2), comment=bool(rec.group(1))))
+                    sys.exit(1)
 
                 elif line.startswith('#'):
                     continue
@@ -718,12 +728,10 @@ def main():
     targets = natsorted(targets)
 
     if not sys.stdin.isatty():
-        for line in sys.stdin:
-            targets.append(line.rstrip('\n'))
+        targets.extend(line.rstrip('\n') for line in sys.stdin)
 
     if not targets:
-        for i in VDPath('').listdir(args.all):
-            targets.append(i)
+        targets.extend(VDPath('').listdir(args.all))
 
     targets = uniq(targets)
 
