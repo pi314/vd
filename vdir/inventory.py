@@ -84,7 +84,7 @@ class Inventory:
         elif iii is not None:
             self.content.append(TrackingItem(int(iii, 10), text, mark=mark))
 
-        elif isinstance(text, (VDPath, VDGlob, VDLink)):
+        elif isinstance(text, (VDPath, VDGlob, VDLink, VDShCmd)):
             self.content.append(text)
 
         else:

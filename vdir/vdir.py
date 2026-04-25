@@ -195,8 +195,7 @@ def step_vim_edit_inventory(base, inventory):
                     new.append(path, iii=iii, mark=mark)
 
                 elif rec.fullmatch(r'(# *)?\$ +(.+)'):
-                    print(VDShCmd(rec.group(2), comment=bool(rec.group(1))))
-                    sys.exit(1)
+                    new.append(VDShCmd(rec.group(2), comment=bool(rec.group(1))))
 
                 elif line.startswith('#'):
                     continue
@@ -241,7 +240,7 @@ def step_collect_inventory_delta(base, new):
         if item is None:
             continue
 
-        if isinstance(item, (VDGlob, VDPath, VDLink)):
+        if isinstance(item, (VDGlob, VDPath, VDLink, VDShCmd)):
             delta_by_iii[None].append(item)
             continue
 
@@ -283,7 +282,7 @@ def step_construct_raw_actions(base, new, delta_by_iii):
 
     # Index newly added paths as TrackAction
     for item in delta_by_iii[None]:
-        if isinstance(item, VDGlob):
+        if isinstance(item, (VDGlob, VDShCmd)):
             ticket_pool.register(TrackAction(item))
         elif isinstance(item, VDPath):
             ticket_pool.register(

@@ -175,3 +175,11 @@ class VDShCmd:
 
     def __repr__(self):
         return f'VDShCmd({self.cmd}, comment={self.comment})'
+
+    @property
+    def txt(self):
+        return self.cmd
+
+    @property
+    def text(self):
+        return self.cmd
