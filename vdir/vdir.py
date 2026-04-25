@@ -32,6 +32,7 @@ from pathlib import Path
 
 from . import logger
 
+from .vdpath import *
 from .utils import *
 from .inventory import *
 from .actions import *
@@ -174,7 +175,7 @@ def step_vim_edit_inventory(base, inventory):
 
                 rec = rere(line)
 
-                if rec.match(r'^([#+*@]?) *(\d+)\t+(.*)$'):
+                if rec.fullmatch(r'([#+*@]?) *(\d+)\t+(.*)'):
                     mark, iii, path = rec.groups()
 
                     if '->' in path:
@@ -274,6 +275,10 @@ def step_construct_raw_actions(base, new, delta_by_iii):
     for item in delta_by_iii[None]:
         if isinstance(item, VDGlob):
             ticket_pool.register(TrackAction(item))
+        elif isinstance(item, VDPath):
+            ticket_pool.register(
+                    ('track', item.path),
+                    TrackAction(item))
         else:
             ticket_pool.register(
                     ('track', Path(item.path)),
