@@ -170,16 +170,15 @@ def step_vim_edit_inventory(base, inventory):
         with open(tf.name, mode='r', encoding='utf8') as f:
             in_banner = True
             for line in f.readlines():
+                if in_banner and line.startswith('#'):
+                    continue
+                in_banner = False
+
                 if not line:
                     new.append(None)
                     continue
 
                 rec = rere(line)
-
-                if in_banner and line.startswith('#'):
-                    continue
-
-                in_banner = False
 
                 if rec.fullmatch(r'([#+*@]?) *(\d+)\t+(.*)'):
                     mark, iii, path = rec.groups()
@@ -194,8 +193,8 @@ def step_vim_edit_inventory(base, inventory):
 
                     new.append(path, iii=iii, mark=mark)
 
-                elif rec.fullmatch(r'(# *)?\$ +(.+)'):
-                    new.append(VDShCmd(rec.group(2), prefix=rec.group(1)))
+                elif rec.fullmatch(r'\$ +(.+)'):
+                    new.append(VDShCmd(rec.group(1)))
 
                 elif line.startswith('#'):
                     continue
@@ -620,8 +619,14 @@ def step_expand_inventory(new, action_list, yn):
                     newnew.append(TrackingItem(None, p))
 
         elif isinstance(item, VDShCmd):
-            for p in item.expand():
-                newnew.append(VDComment(p))
+            returncode, stdout, stderr = item.run()
+            if returncode:
+                newnew.append(VDComment(f'returncode={returncode}'))
+            for line in stderr:
+                newnew.append(VDComment(line))
+            for line in stdout:
+                if not new.contains(line):
+                    newnew.append(TrackingItem(None, line))
 
     newnew.freeze()
 

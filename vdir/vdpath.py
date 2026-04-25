@@ -184,17 +184,17 @@ class VDLink:
 
 
 class VDShCmd:
-    def __init__(self, txt, prefix=False):
+    def __init__(self, txt):
         self.txt = txt
         self.cmd = shlex.split(txt)
-        self.prefix = prefix
 
     def __repr__(self):
-        return f'VDShCmd({self.cmd}, prefix={self.prefix})'
+        return f'VDShCmd({self.cmd})'
 
     @property
     def text(self):
         return self.txt
 
-    def expand(self):
-        return self.cmd
+    def run(self):
+        p = iroiro.run(self.cmd, stdin=False)
+        return p.returncode, [line for line in p.stdout], [line for line in p.stderr]
