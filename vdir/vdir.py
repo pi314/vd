@@ -131,7 +131,7 @@ def step_vim_edit_inventory(base, inventory):
                 for item in inventory:
                     if item is None:
                         f.writeline()
-                    elif isinstance(item, (VDPath, VDGlob, VDLink)):
+                    elif isinstance(item, (VDPath, VDGlob, VDLink, VDComment)):
                         f.writeline(f'{item.text}')
                     elif item.iii is None:
                         f.writeline(f'{item.text}')
@@ -195,7 +195,7 @@ def step_vim_edit_inventory(base, inventory):
                     new.append(path, iii=iii, mark=mark)
 
                 elif rec.fullmatch(r'(# *)?\$ +(.+)'):
-                    new.append(VDShCmd(rec.group(2), comment=bool(rec.group(1))))
+                    new.append(VDShCmd(rec.group(2), prefix=rec.group(1)))
 
                 elif line.startswith('#'):
                     continue
@@ -272,7 +272,6 @@ def step_construct_raw_actions(base, new, delta_by_iii):
     # Index everything from base inventory pathlib.Path()
     for item in base:
         if not isinstance(item, TrackingItem):
-            logger.errorq('base inventory should not have this:', item)
             continue
         ticket_pool.reserve(item)
 
@@ -282,7 +281,9 @@ def step_construct_raw_actions(base, new, delta_by_iii):
 
     # Index newly added paths as TrackAction
     for item in delta_by_iii[None]:
-        if isinstance(item, (VDGlob, VDShCmd)):
+        if isinstance(item, VDComment):
+            continue
+        elif isinstance(item, (VDGlob, VDShCmd)):
             ticket_pool.register(TrackAction(item))
         elif isinstance(item, VDPath):
             ticket_pool.register(
@@ -617,6 +618,10 @@ def step_expand_inventory(new, action_list, yn):
             for p in item.glob():
                 if not new.contains(p):
                     newnew.append(TrackingItem(None, p))
+
+        elif isinstance(item, VDShCmd):
+            for p in item.expand():
+                newnew.append(VDComment(p))
 
     newnew.freeze()
 

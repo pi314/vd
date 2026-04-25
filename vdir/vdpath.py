@@ -1,10 +1,25 @@
 import os
 import glob
+import shlex
 
 from os.path import expanduser, join
 from pathlib import Path
 
+from . import iroiro
+
 from .utils import *
+
+
+class VDComment:
+    def __init__(self, text):
+        self.txt = text
+
+    def __repr__(self):
+        return f'VDComment({self.txt})'
+
+    @property
+    def text(self):
+        return '# ' + self.txt
 
 
 class VDGlob:
@@ -169,17 +184,17 @@ class VDLink:
 
 
 class VDShCmd:
-    def __init__(self, cmd_str, comment=False):
-        self.cmd = cmd_str
-        self.comment = comment
+    def __init__(self, txt, prefix=False):
+        self.txt = txt
+        self.cmd = shlex.split(txt)
+        self.prefix = prefix
 
     def __repr__(self):
-        return f'VDShCmd({self.cmd}, comment={self.comment})'
-
-    @property
-    def txt(self):
-        return self.cmd
+        return f'VDShCmd({self.cmd}, prefix={self.prefix})'
 
     @property
     def text(self):
+        return self.txt
+
+    def expand(self):
         return self.cmd

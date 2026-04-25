@@ -78,7 +78,7 @@ class Inventory:
             if (self.content or [None])[-1] is not None:
                 self.content.append(None)
 
-        elif isinstance(text, TrackingItem):
+        elif isinstance(text, (TrackingItem, VDComment)):
             self.content.append(text)
 
         elif iii is not None:
