@@ -43,7 +43,7 @@ if !g:vd_disable_all_mappings
             exec 'normal! ' . a:key
         endif
 
-        call VDMoveToLineStart()
+        call s:VDMoveToLineStart()
     endfunction
 
     " Cursor movement API
