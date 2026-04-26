@@ -121,25 +121,25 @@ def step_vim_edit_inventory(base, inventory):
         logger.info('No targets to edit')
         return (sys.exit, 0)
 
+    if not isinstance(inventory, Inventory):
+        logger.error(f'TypeError: {repr(inventory)}')
+        return (sys.exit, 1)
+
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='.vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
             f.writelines(hint_text())
             f.writeline()
 
-            if isinstance(inventory, Inventory):
-                for item in inventory:
-                    if item is None:
-                        f.writeline()
-                    elif isinstance(item, (VDPath, VDGlob, VDLink, VDComment, VDShCmd)):
-                        f.writeline(f'{item.text}')
-                    elif item.iii is None:
-                        f.writeline(f'{item.text}')
-                    else:
-                        f.writeline(f'{item.iii}\t{item.text}')
-            else:
-                for line in inventory:
-                    f.writeline(f'{line}')
+            for item in inventory:
+                if item is None:
+                    f.writeline()
+                elif isinstance(item, (VDPath, VDGlob, VDLink, VDComment, VDShCmd)):
+                    f.writeline(f'{item.text}')
+                elif item.iii is None:
+                    f.writeline(f'{item.text}')
+                else:
+                    f.writeline(f'{item.iii}\t{item.text}')
 
             f.flush()
 
@@ -171,12 +171,7 @@ def step_vim_edit_inventory(base, inventory):
         # Parse tempfile content
         new = Inventory()
         with open(tf.name, mode='r', encoding='utf8') as f:
-            in_banner = True
             for line in f.readlines():
-                if in_banner and line.startswith('#'):
-                    continue
-                in_banner = False
-
                 if not line:
                     new.append(None)
                     continue
