@@ -179,7 +179,7 @@ if !g:vd_disable_syntax_highlight
     syntax match VDLinkArrow /\v *\V->\v */ containedin=VDLinkItem,VDDeadLinkItem
     highlight VDLinkArrow ctermfg=240 " TBD
 
-    syntax match VDLinkPath /\v\t@<=\zs.+[^ ]\ze( *\V->\v)@=/ contained containedin=VDLinkItem,VDDeadLinkItem
+    syntax match VDLinkPath /\v\t@<=\zs.*[^ ]\ze( *\V->\v)@=/ contained containedin=VDLinkItem,VDDeadLinkItem
     highlight VDLinkPath ctermfg=220 " TBD
     if has_key(s:ls_colors, 'ln')
         exec join(['highlight', 'VDLinkPath', ] + s:ls_colors['ln'])
