@@ -50,6 +50,9 @@ class VDPath:
             self.txt = text
             self.path = Path(expanduser(text.rstrip('|/')))
 
+        if self.isdir and self.txt:
+            self.txt = self.txt.rstrip('/') + '/'
+
     def __repr__(self):
         return f'VDPath({self.text})'
 
