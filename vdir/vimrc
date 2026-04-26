@@ -1,13 +1,11 @@
 " =============================================================================
-" vd vimrc
+" vdir vimrc
 " =============================================================================
 
 let g:vd_disable_default_options = get(g:, 'vd_disable_default_options', v:false)
-let g:vd_disable_key_mappings = get(g:, 'vd_disable_key_mappings', v:false)
+let g:vd_disable_all_mappings = get(g:, 'vd_disable_all_mappings', v:false)
+let g:vd_disable_default_mappings = get(g:, 'vd_disable_default_mappings', v:false)
 let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:false)
-
-let g:tcomment#options = {'whitespace': 'no'}
-setlocal commentstring=#%s
 
 " =============================================================================
 
@@ -15,9 +13,14 @@ if !g:vd_disable_default_options
     " Turn off line number for not interferring with item index
     setlocal nonu
     setlocal nowrap
+
+    " Comment settings
+    let g:tcomment#options = {'whitespace': 'no'}
+    setlocal commentstring=#%s
 endif
 
-if !g:vd_disable_key_mappings
+
+if !g:vd_disable_all_mappings
     function! VDMoveToLineStart ()
         if match(getline('.'), '\v^[*+@]?\d+') < 0
             normal! ^
@@ -36,27 +39,21 @@ if !g:vd_disable_key_mappings
     endfunction
 
     " Cursor movement API
-    nnoremap <Plug>(VDMoveToLineStart) :call VDMoveToLineStart()<CR>
-    nnoremap <Plug>(VDKeyH) HW
-    nnoremap <Plug>(VDKeyM) MW
-    nnoremap <Plug>(VDKeyL) LW
-    nnoremap <Plug>(VDKeyG) GW
+    nnoremap <silent> <Plug>(VDMoveToLineStart) <cmd>call VDMoveToLineStart()<CR>
+    nnoremap <silent> <Plug>(VDKeyH) HW
+    nnoremap <silent> <Plug>(VDKeyM) MW
+    nnoremap <silent> <Plug>(VDKeyL) LW
+    nnoremap <silent> <Plug>(VDKeyG) GW
+
+    xnoremap <silent> <Plug>(VDMoveToLineStart) <cmd>call VDMoveToLineStart()<CR>
+    xnoremap <silent> <Plug>(VDKeyH) HW
+    xnoremap <silent> <Plug>(VDKeyM) MW
+    xnoremap <silent> <Plug>(VDKeyL) LW
+    xnoremap <silent> <Plug>(VDKeyG) GW
 
     " Item editing API
-    nnoremap <Plug>(VDEditWholeLine) ^WC
-    nnoremap <expr> <Plug>(VDEditAtStartOfLine) ((col('.') == 1) ? 'I' : '^Wi')
-
-    " Cursor movement default binding
-    nmap ^ <Plug>(VDMoveToLineStart)
-    nmap H <Plug>(VDKeyH)
-    nmap M <Plug>(VDKeyM)
-    nmap L <Plug>(VDKeyL)
-    nmap G <Plug>(VDKeyG)
-
-    " Item editing default binding
-    nmap cc <Plug>(VDEditWholeLine)
-    nmap S  <Plug>(VDEditWholeLine)
-    nmap I  <Plug>(VDEditAtStartOfLine)
+    nnoremap <silent> <Plug>(VDEditWholeLine) ^WC
+    nnoremap <silent> <expr> <Plug>(VDEditAtStartOfLine) ((col('.') == 1) ? 'I' : '^Wi')
 
     function! VDToggleMark (mark)
         let line = getline('.')
@@ -83,23 +80,54 @@ if !g:vd_disable_key_mappings
     endfunction
 
     " Toggle @ mark
-    function! VDToggleMarkResolve ()
+    function! VDToggleResolveMark ()
         call VDToggleMark('@')
     endfunction
-    nnoremap <silent> @@ :call VDToggleMarkResolve()<CR>
+    nnoremap <silent> <Plug>(VDToggleResolveMark) <cmd>call VDToggleResolveMark()<CR>
 
     " Toggle + and * mark
     function! VDToggleMarkExpand ()
         call VDToggleMark('+*')
     endfunction
-    nnoremap <silent> ++ :call VDToggleMarkExpand()<CR>
+    nnoremap <silent> <Plug>(VDToggleMarkExpand) <cmd>call VDToggleMarkExpand()<CR>
 
     " Toggle # mark
-    function! VDToggleMarkUntrack ()
+    function! VDToggleUntrackMark ()
         call VDToggleMark('#')
     endfunction
-    nnoremap <silent> ## :call VDToggleMarkUntrack()<CR>
+    nnoremap <silent> <Plug>(VDToggleUntrackMark) <cmd>call VDToggleUntrackMark()<CR>
 endif
+
+
+if !g:vd_disable_default_mappings
+    " Cursor movement default binding
+    nmap ^ <Plug>(VDMoveToLineStart)
+    nmap H <Plug>(VDKeyH)
+    nmap M <Plug>(VDKeyM)
+    nmap L <Plug>(VDKeyL)
+    nmap G <Plug>(VDKeyG)
+
+    xmap ^ <Plug>(VDMoveToLineStart)
+    xmap H <Plug>(VDKeyH)
+    xmap M <Plug>(VDKeyM)
+    xmap L <Plug>(VDKeyL)
+    xmap G <Plug>(VDKeyG)
+
+    " Item editing default binding
+    nmap cc <Plug>(VDEditWholeLine)
+    nmap S  <Plug>(VDEditWholeLine)
+    nmap I  <Plug>(VDEditAtStartOfLine)
+
+    " Toggle @ mark
+    nmap @@ <Plug>(VDToggleResolveMark)
+
+    " Toggle + and * mark
+    nmap ++ <Plug>(VDToggleMarkExpand)
+
+    " Toggle # mark
+    nmap ## <Plug>(VDToggleUntrackMark)
+endif
+
 
 if !g:vd_disable_syntax_highlight
     if v:version >= 900
@@ -205,5 +233,4 @@ if !g:vd_disable_syntax_highlight
 
     syntax match VDErrorFilePath /\v\t@<=.+$/ contained containedin=VDErrorItem
     highlight VDErrorFilePath ctermfg=black ctermbg=red
-
 endif
