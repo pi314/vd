@@ -131,7 +131,7 @@ def step_vim_edit_inventory(base, inventory):
                 for item in inventory:
                     if item is None:
                         f.writeline()
-                    elif isinstance(item, (VDPath, VDGlob, VDLink, VDComment)):
+                    elif isinstance(item, (VDPath, VDGlob, VDLink, VDComment, VDShCmd)):
                         f.writeline(f'{item.text}')
                     elif item.iii is None:
                         f.writeline(f'{item.text}')
@@ -155,8 +155,11 @@ def step_vim_edit_inventory(base, inventory):
         cmd += ['+source ' + str(Path(__file__).parent / 'vimrc')]
 
         # Set proper tabstop for my (arguably) perfect vertical separation line
-        if len(inventory):
-            cmd.append('+set tabstop=' + str(len(str(inventory[0].iii)) + 4))
+        for item in inventory:
+            if not hasattr(item, 'iii'):
+                continue
+            cmd.append('+set tabstop=' + str(len(str(item.iii)) + 4))
+            break
 
         # Move cursor to the line above first inventory item
         cmd.append('+normal ' + chr(0x7d))

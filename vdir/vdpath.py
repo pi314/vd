@@ -19,7 +19,7 @@ class VDComment:
 
     @property
     def text(self):
-        return '# ' + self.txt
+        return '# ' + str(self.txt)
 
 
 class VDGlob:
@@ -186,15 +186,25 @@ class VDLink:
 class VDShCmd:
     def __init__(self, txt):
         self.txt = txt
-        self.cmd = shlex.split(txt)
+        self.cmd = []
+
+        self.cmd.append([])
+        for token in shlex.split(txt):
+            if token != '|':
+                self.cmd[-1].append(token)
+            else:
+                self.cmd.append([])
+
+        self.cmd = [cmd for cmd in self.cmd if cmd]
 
     def __repr__(self):
         return f'VDShCmd({self.cmd})'
 
     @property
     def text(self):
-        return self.txt
+        return '$' + self.txt
 
     def run(self):
-        p = iroiro.run(self.cmd, stdin=False)
-        return p.returncode, [line for line in p.stdout], [line for line in p.stderr]
+        # p = iroiro.run(self.cmd, stdin=False)
+        # return p.returncode, [line for line in p.stdout], [line for line in p.stderr]
+        return 0, [], self.cmd
