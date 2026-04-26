@@ -25,5 +25,5 @@ publish:
 	@echo "$S" hatch build
 	@hatch build
 
-	@echo "$S" hatch publish -r "$(basename "${PWD}")"
-	@hatch publish
+	@echo "$S" hatch publish --repo "$$(basename "${PWD}")"
+	@hatch publish --repo "$$(basename "${PWD}")"
