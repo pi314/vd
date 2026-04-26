@@ -121,25 +121,25 @@ def step_vim_edit_inventory(base, inventory):
         logger.info('No targets to edit')
         return (sys.exit, 0)
 
+    if not isinstance(inventory, Inventory):
+        logger.error(f'TypeError: {repr(inventory)}')
+        return (sys.exit, 1)
+
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='.vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
             f.writelines(hint_text())
             f.writeline()
 
-            if isinstance(inventory, Inventory):
-                for item in inventory:
-                    if item is None:
-                        f.writeline()
-                    elif isinstance(item, (VDPath, VDGlob, VDLink)):
-                        f.writeline(f'{item.text}')
-                    elif item.iii is None:
-                        f.writeline(f'{item.text}')
-                    else:
-                        f.writeline(f'{item.iii}\t{item.text}')
-            else:
-                for line in inventory:
-                    f.writeline(f'{line}')
+            for item in inventory:
+                if item is None:
+                    f.writeline()
+                elif isinstance(item, (VDPath, VDGlob, VDLink, VDComment, VDShCmd)):
+                    f.writeline(f'{item.text}')
+                elif item.iii is None:
+                    f.writeline(f'{item.text}')
+                else:
+                    f.writeline(f'{item.iii}\t{item.text}')
 
             f.flush()
 
@@ -155,8 +155,11 @@ def step_vim_edit_inventory(base, inventory):
         cmd += ['+source ' + str(Path(__file__).parent / 'vimrc')]
 
         # Set proper tabstop for my (arguably) perfect vertical separation line
-        if len(inventory):
-            cmd.append('+set tabstop=' + str(len(str(inventory[0].iii)) + 4))
+        for item in inventory:
+            if not hasattr(item, 'iii'):
+                continue
+            cmd.append('+set tabstop=' + str(len(str(item.iii)) + 4))
+            break
 
         # Move cursor to the line above first inventory item
         cmd.append('+normal ' + chr(0x7d))
@@ -188,16 +191,20 @@ def step_vim_edit_inventory(base, inventory):
 
                     new.append(path, iii=iii, mark=mark)
 
+                elif rec.fullmatch(r'\$ +(.+)'):
+                    new.append(VDShCmd(rec.group(1)))
+
                 elif line.startswith('#'):
                     continue
 
                 else:
                     if '*' in line:
                         path = VDGlob(line)
-                    elif '->' in line:
-                        path = VDLink(line.split('->')[0].rstrip())
                     else:
                         path = VDPath(line)
+                        if path.islink:
+                            path = VDLink(line)
+
                     new.append(path)
 
         new.freeze()
@@ -210,10 +217,10 @@ def step_collect_inventory_delta(base, new):
 
     logger.debug(magenta('==== inventory (base) ===='))
     for item in base:
-        logger.debug(item)
+        logger.debug(repr(item))
     logger.debug(magenta('-------------------------'))
     for item in new:
-        logger.debug(item)
+        logger.debug(repr(item))
     logger.debug(magenta('==== inventory (new) ===='))
 
     delta_by_iii = {}
@@ -231,7 +238,7 @@ def step_collect_inventory_delta(base, new):
         if item is None:
             continue
 
-        if isinstance(item, (VDGlob, VDPath, VDLink)):
+        if isinstance(item, (VDGlob, VDPath, VDLink, VDShCmd)):
             delta_by_iii[None].append(item)
             continue
 
@@ -263,7 +270,6 @@ def step_construct_raw_actions(base, new, delta_by_iii):
     # Index everything from base inventory pathlib.Path()
     for item in base:
         if not isinstance(item, TrackingItem):
-            logger.errorq('base inventory should not have this:', item)
             continue
         ticket_pool.reserve(item)
 
@@ -273,12 +279,18 @@ def step_construct_raw_actions(base, new, delta_by_iii):
 
     # Index newly added paths as TrackAction
     for item in delta_by_iii[None]:
-        if isinstance(item, VDGlob):
+        if isinstance(item, VDComment):
+            continue
+        elif isinstance(item, (VDGlob, VDShCmd)):
             ticket_pool.register(TrackAction(item))
         elif isinstance(item, VDPath):
             ticket_pool.register(
                     ('track', item.path),
                     TrackAction(item))
+        elif isinstance(item, VDLink):
+            ticket_pool.register(
+                    ('track', item.path),
+                    TrackAction(item.lnk))
         else:
             ticket_pool.register(
                     ('track', Path(item.path)),
@@ -402,7 +414,10 @@ def step_merge_actions(base, new, ticket_pool):
 
     # Pass 2, cancel DeleteAction if TrackAction exists
     for path, actions in ticket_pool.by_path.items():
-        if 'delete' in actions and 'track' in actions:
+        if 'delete' in actions and not path.exists():
+            for ticket in actions['delete']:
+                ticket.action = NoAction(ticket.action.src)
+        elif 'delete' in actions and 'track' in actions:
             for ticket in actions['delete']:
                 ticket.action = NoAction(ticket.action.src)
     dump()
@@ -499,19 +514,27 @@ def step_confirm_action_list(base, new, ticket_pool):
         return (sys.exit, 0)
 
     def action_sort_key(action):
+        action_type = 99
         if isinstance(action, DeleteAction):
-            return (1, action.targets[0])
+            action_type = 1
         elif isinstance(action, CopyAction):
-            return (2, action.targets[0])
+            action_type = 2
         elif isinstance(action, RenameAction):
-            return (3, action.targets[0])
+            action_type = 3
         elif isinstance(action, UntrackAction):
-            return (4, action.targets[0])
+            action_type = 4
         elif isinstance(action, TrackAction):
-            return (5, action.targets[0])
+            action_type = 5
         elif isinstance(action, RelinkAction):
-            return (6, action.targets[0])
-        return (99, action.targets[0])
+            action_type = 6
+
+        tgt = action.targets[0]
+        if isinstance(tgt, VDPath):
+            tgt = 1
+        elif isinstance(tgt, (VDGlob, VDShCmd)):
+            tgt = 2
+
+        return (action_type, tgt)
 
     action_list = sorted(action_list, key=action_sort_key)
 
@@ -589,25 +612,37 @@ def step_expand_inventory(new, action_list, yn):
 
             elif item.mark in ('*', '+'):
                 for p in item.path.listdir(item.mark == '*'):
-                    if not new.contains(p):
+                    if not new.contains(p) and not newnew.contains(p):
                         newnew.append(TrackingItem(None, p))
 
             elif item.mark == '@':
-                if not new.contains(item.path.ref):
+                if not new.contains(item.path.ref) and not newnew.contains(item.path.ref):
                     newnew.append(TrackingItem(None, item.path.ref))
 
             else:
                 newnew.append(TrackingItem(None, item.path))
 
         elif isinstance(item, (VDPath, VDLink)):
-            if not new.contains(item):
+            if not new.contains(item) and not newnew.contains(item):
                 newnew.append(TrackingItem(None, item))
 
         elif isinstance(item, VDGlob):
             logger.debug('expand', item)
             for p in item.glob():
-                if not new.contains(p):
+                if not new.contains(p) and not newnew.contains(p):
                     newnew.append(TrackingItem(None, p))
+
+        elif isinstance(item, VDShCmd):
+            returncode, ran_cmd, stdout, stderr = item.run()
+            if returncode:
+                for idx, cmd_str in enumerate(ran_cmd):
+                    newnew.append(VDComment('{} {}'.format('$' if idx == 0 else ' |', cmd_str)))
+                newnew.append(VDComment(f'returncode={returncode}'))
+            for line in stderr:
+                newnew.append(VDComment(line))
+            for line in stdout:
+                if not new.contains(line) and not newnew.contains(line):
+                    newnew.append(TrackingItem(None, line))
 
     newnew.freeze()
 
@@ -718,12 +753,10 @@ def main():
     targets = natsorted(targets)
 
     if not sys.stdin.isatty():
-        for line in sys.stdin:
-            targets.append(line.rstrip('\n'))
+        targets.extend(line.rstrip('\n') for line in sys.stdin)
 
     if not targets:
-        for i in VDPath('').listdir(args.all):
-            targets.append(i)
+        targets.extend(VDPath('').listdir(args.all))
 
     targets = uniq(targets)
 

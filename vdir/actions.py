@@ -216,7 +216,7 @@ class VirtualAction:
     def __repr__(self):
         return '<{} {}>'.format(
                 self.__class__.__name__,
-                ', '.join('[{}]'.format(t) for t in self.targets))
+                '[' + ', '.join('{}'.format(repr(t)) for t in self.targets) + ']')
 
 
 class MetaAction(VirtualAction):
@@ -229,7 +229,11 @@ class FSAction(VirtualAction):
 
 class TrackAction(MetaAction):
     def preview(self):
-        logger.info(cyan('Track:') + cyan('[') + self.src.txt + cyan(']'))
+        if isinstance(self.src, VDShCmd):
+            what = cyan('$(') + self.src.txt + cyan(')')
+        else:
+            what = cyan('[') + self.src.txt + cyan(']')
+        logger.info(cyan('Track:') + what)
 
 
 class NoAction(MetaAction):

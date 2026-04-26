@@ -1,10 +1,25 @@
 import os
 import glob
+import shlex
 
 from os.path import expanduser, join
 from pathlib import Path
 
+from . import iroiro
+
 from .utils import *
+
+
+class VDComment:
+    def __init__(self, text):
+        self.txt = text
+
+    def __repr__(self):
+        return f'VDComment({self.txt})'
+
+    @property
+    def text(self):
+        return '# ' + str(self.txt)
 
 
 class VDGlob:
@@ -34,6 +49,9 @@ class VDPath:
         else:
             self.txt = text
             self.path = Path(expanduser(text.rstrip('|/')))
+
+        if self.isdir and self.txt:
+            self.txt = self.txt.rstrip('/') + '/'
 
     def __repr__(self):
         return f'VDPath({self.text})'
@@ -143,7 +161,7 @@ class VDLink:
             self.ref = VDPath(self.ref_text)
 
     def __repr__(self):
-        return f'VDLink({self.lnk} -> {self.ref})'
+        return f'VDLink({repr(self.lnk)} -> {repr(self.ref)})'
 
     def __hash__(self):
         return hash(self.lnk)
@@ -166,3 +184,43 @@ class VDLink:
 
     def __getattr__(self, attr):
         return getattr(self.lnk, attr)
+
+
+class VDShCmd:
+    def __init__(self, txt):
+        self.txt = txt
+        self.cmd = []
+
+        self.cmd.append([])
+        for token in shlex.split(txt):
+            if token != '|':
+                self.cmd[-1].append(token)
+            else:
+                self.cmd.append([])
+
+        self.cmd = [cmd for cmd in self.cmd if cmd]
+
+    def __repr__(self):
+        return f'VDShCmd({self.cmd})'
+
+    @property
+    def text(self):
+        return '$ ' + self.txt
+
+    def run(self):
+        ran_cmd = []
+        returncode = None
+        stdin = None
+        stdout = False
+        stderr = []
+        for cmd in self.cmd:
+            stdin, stdout, stderr = stdout, [], []
+            ran_cmd.append(' '.join(shlex.quote(token) for token in cmd))
+            p = iroiro.run(cmd, stdin=stdin)
+            returncode = p.returncode
+            stdout = [line for line in p.stdout]
+            stderr = [line for line in p.stderr]
+            if returncode:
+                break
+
+        return (returncode, ran_cmd, stdout, stderr)
