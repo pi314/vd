@@ -409,7 +409,10 @@ def step_merge_actions(base, new, ticket_pool):
 
     # Pass 2, cancel DeleteAction if TrackAction exists
     for path, actions in ticket_pool.by_path.items():
-        if 'delete' in actions and 'track' in actions:
+        if 'delete' in actions and not path.exists():
+            for ticket in actions['delete']:
+                ticket.action = NoAction(ticket.action.src)
+        elif 'delete' in actions and 'track' in actions:
             for ticket in actions['delete']:
                 ticket.action = NoAction(ticket.action.src)
     dump()
