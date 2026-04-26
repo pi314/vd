@@ -158,7 +158,7 @@ class VDLink:
             self.ref = VDPath(self.ref_text)
 
     def __repr__(self):
-        return f'VDLink({self.lnk} -> {self.ref})'
+        return f'VDLink({repr(self.lnk)} -> {repr(self.ref)})'
 
     def __hash__(self):
         return hash(self.lnk)

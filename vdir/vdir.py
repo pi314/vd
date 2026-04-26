@@ -200,10 +200,11 @@ def step_vim_edit_inventory(base, inventory):
                 else:
                     if '*' in line:
                         path = VDGlob(line)
-                    elif '->' in line:
-                        path = VDLink(line.split('->')[0].rstrip())
                     else:
                         path = VDPath(line)
+                        if path.islink:
+                            path = VDLink(line)
+
                     new.append(path)
 
         new.freeze()
@@ -216,10 +217,10 @@ def step_collect_inventory_delta(base, new):
 
     logger.debug(magenta('==== inventory (base) ===='))
     for item in base:
-        logger.debug(item)
+        logger.debug(repr(item))
     logger.debug(magenta('-------------------------'))
     for item in new:
-        logger.debug(item)
+        logger.debug(repr(item))
     logger.debug(magenta('==== inventory (new) ===='))
 
     delta_by_iii = {}
@@ -286,6 +287,10 @@ def step_construct_raw_actions(base, new, delta_by_iii):
             ticket_pool.register(
                     ('track', item.path),
                     TrackAction(item))
+        elif isinstance(item, VDLink):
+            ticket_pool.register(
+                    ('track', item.path),
+                    TrackAction(item.lnk))
         else:
             ticket_pool.register(
                     ('track', Path(item.path)),
@@ -524,8 +529,10 @@ def step_confirm_action_list(base, new, ticket_pool):
             action_type = 6
 
         tgt = action.targets[0]
-        if isinstance(tgt, (VDGlob, VDShCmd)):
-            tgt = tgt.text
+        if isinstance(tgt, VDPath):
+            tgt = 1
+        elif isinstance(tgt, (VDGlob, VDShCmd)):
+            tgt = 2
 
         return (action_type, tgt)
 
@@ -605,24 +612,24 @@ def step_expand_inventory(new, action_list, yn):
 
             elif item.mark in ('*', '+'):
                 for p in item.path.listdir(item.mark == '*'):
-                    if not new.contains(p):
+                    if not new.contains(p) and not newnew.contains(p):
                         newnew.append(TrackingItem(None, p))
 
             elif item.mark == '@':
-                if not new.contains(item.path.ref):
+                if not new.contains(item.path.ref) and not newnew.contains(item.path.ref):
                     newnew.append(TrackingItem(None, item.path.ref))
 
             else:
                 newnew.append(TrackingItem(None, item.path))
 
         elif isinstance(item, (VDPath, VDLink)):
-            if not new.contains(item):
+            if not new.contains(item) and not newnew.contains(item):
                 newnew.append(TrackingItem(None, item))
 
         elif isinstance(item, VDGlob):
             logger.debug('expand', item)
             for p in item.glob():
-                if not new.contains(p):
+                if not new.contains(p) and not newnew.contains(p):
                     newnew.append(TrackingItem(None, p))
 
         elif isinstance(item, VDShCmd):
@@ -634,7 +641,7 @@ def step_expand_inventory(new, action_list, yn):
             for line in stderr:
                 newnew.append(VDComment(line))
             for line in stdout:
-                if not new.contains(line):
+                if not new.contains(line) and not newnew.contains(line):
                     newnew.append(TrackingItem(None, line))
 
     newnew.freeze()

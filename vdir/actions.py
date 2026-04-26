@@ -216,7 +216,7 @@ class VirtualAction:
     def __repr__(self):
         return '<{} {}>'.format(
                 self.__class__.__name__,
-                ', '.join('[{}]'.format(t) for t in self.targets))
+                '[' + ', '.join('{}'.format(repr(t)) for t in self.targets) + ']')
 
 
 class MetaAction(VirtualAction):
