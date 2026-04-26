@@ -229,7 +229,11 @@ class FSAction(VirtualAction):
 
 class TrackAction(MetaAction):
     def preview(self):
-        logger.info(cyan('Track:') + cyan('[') + self.src.txt + cyan(']'))
+        if isinstance(self.src, VDShCmd):
+            what = cyan('$(') + self.src.txt + cyan(')')
+        else:
+            what = cyan('[') + self.src.txt + cyan(']')
+        logger.info(cyan('Track:') + what)
 
 
 class NoAction(MetaAction):

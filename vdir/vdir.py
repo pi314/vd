@@ -506,19 +506,25 @@ def step_confirm_action_list(base, new, ticket_pool):
         return (sys.exit, 0)
 
     def action_sort_key(action):
+        action_type = 99
         if isinstance(action, DeleteAction):
-            return (1, action.targets[0])
+            action_type = 1
         elif isinstance(action, CopyAction):
-            return (2, action.targets[0])
+            action_type = 2
         elif isinstance(action, RenameAction):
-            return (3, action.targets[0])
+            action_type = 3
         elif isinstance(action, UntrackAction):
-            return (4, action.targets[0])
+            action_type = 4
         elif isinstance(action, TrackAction):
-            return (5, action.targets[0])
+            action_type = 5
         elif isinstance(action, RelinkAction):
-            return (6, action.targets[0])
-        return (99, action.targets[0])
+            action_type = 6
+
+        tgt = action.targets[0]
+        if isinstance(tgt, (VDGlob, VDShCmd)):
+            tgt = tgt.text
+
+        return (action_type, tgt)
 
     action_list = sorted(action_list, key=action_sort_key)
 
@@ -617,8 +623,10 @@ def step_expand_inventory(new, action_list, yn):
                     newnew.append(TrackingItem(None, p))
 
         elif isinstance(item, VDShCmd):
-            returncode, stdout, stderr = item.run()
+            returncode, ran_cmd, stdout, stderr = item.run()
             if returncode:
+                for idx, cmd_str in enumerate(ran_cmd):
+                    newnew.append(VDComment('{} {}'.format('$' if idx == 0 else ' |', cmd_str)))
                 newnew.append(VDComment(f'returncode={returncode}'))
             for line in stderr:
                 newnew.append(VDComment(line))

@@ -202,9 +202,22 @@ class VDShCmd:
 
     @property
     def text(self):
-        return '$' + self.txt
+        return '$ ' + self.txt
 
     def run(self):
-        # p = iroiro.run(self.cmd, stdin=False)
-        # return p.returncode, [line for line in p.stdout], [line for line in p.stderr]
-        return 0, [], self.cmd
+        ran_cmd = []
+        returncode = None
+        stdin = None
+        stdout = False
+        stderr = []
+        for cmd in self.cmd:
+            stdin, stdout, stderr = stdout, [], []
+            ran_cmd.append(' '.join(shlex.quote(token) for token in cmd))
+            p = iroiro.run(cmd, stdin=stdin)
+            returncode = p.returncode
+            stdout = [line for line in p.stdout]
+            stderr = [line for line in p.stderr]
+            if returncode:
+                break
+
+        return (returncode, ran_cmd, stdout, stderr)
