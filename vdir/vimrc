@@ -21,8 +21,8 @@ endif
 
 
 if !g:vd_disable_all_mappings
-    function! VDMoveToLineStart ()
-        if match(getline('.'), '\v^[*+@]?\d+') < 0
+    function! s:VDMoveToLineStart ()
+        if match(getline('.'), '\v^[*+@]?\d+\t') < 0
             normal! ^
             return
         endif
@@ -38,22 +38,30 @@ if !g:vd_disable_all_mappings
         endif
     endfunction
 
-    " Cursor movement API
-    nnoremap <silent> <Plug>(VDMoveToLineStart) <cmd>call VDMoveToLineStart()<CR>
-    nnoremap <silent> <Plug>(VDKeyH) HW
-    nnoremap <silent> <Plug>(VDKeyM) MW
-    nnoremap <silent> <Plug>(VDKeyL) LW
-    nnoremap <silent> <Plug>(VDKeyG) GW
+    function! s:VDCursorMove (key)
+        if !empty(a:key) && a:key != '^'
+            exec 'normal! ' . a:key
+        endif
 
-    xnoremap <silent> <Plug>(VDMoveToLineStart) <cmd>call VDMoveToLineStart()<CR>
-    xnoremap <silent> <Plug>(VDKeyH) HW
-    xnoremap <silent> <Plug>(VDKeyM) MW
-    xnoremap <silent> <Plug>(VDKeyL) LW
-    xnoremap <silent> <Plug>(VDKeyG) GW
+        call VDMoveToLineStart()
+    endfunction
+
+    " Cursor movement API
+    nnoremap <silent> <Plug>(VDMoveToLineStart) <cmd>call <SID>VDMoveToLineStart()<CR>
+    nnoremap <silent> <Plug>(VDKeyH) <cmd>call <SID>VDCursorMove('H')<CR>
+    nnoremap <silent> <Plug>(VDKeyM) <cmd>call <SID>VDCursorMove('M')<CR>
+    nnoremap <silent> <Plug>(VDKeyL) <cmd>call <SID>VDCursorMove('L')<CR>
+    nnoremap <silent> <Plug>(VDKeyG) <cmd>call <SID>VDCursorMove('G')<CR>
+
+    xnoremap <silent> <Plug>(VDMoveToLineStart) <cmd>call <SID>VDMoveToLineStart()<CR>
+    xnoremap <silent> <Plug>(VDKeyH) <cmd>call <SID>VDCursorMove('H')<CR>
+    xnoremap <silent> <Plug>(VDKeyM) <cmd>call <SID>VDCursorMove('M')<CR>
+    xnoremap <silent> <Plug>(VDKeyL) <cmd>call <SID>VDCursorMove('L')<CR>
+    xnoremap <silent> <Plug>(VDKeyG) <cmd>call <SID>VDCursorMove('G')<CR>
 
     " Item editing API
-    nnoremap <silent> <Plug>(VDEditWholeLine) ^WC
-    nnoremap <silent> <expr> <Plug>(VDEditAtStartOfLine) ((col('.') == 1) ? 'I' : '^Wi')
+    nnoremap <silent> <Plug>(VDEditWholeLine) ^<cmd>call <SID>VDMoveToLineStart()<CR>C
+    nnoremap <silent> <Plug>(VDEditAtStartOfLine) ^<cmd>call <SID>VDMoveToLineStart()<CR>i
 
     function! VDToggleMark (mark)
         let line = getline('.')
@@ -101,31 +109,31 @@ endif
 
 if !g:vd_disable_default_mappings
     " Cursor movement default binding
-    nmap ^ <Plug>(VDMoveToLineStart)
-    nmap H <Plug>(VDKeyH)
-    nmap M <Plug>(VDKeyM)
-    nmap L <Plug>(VDKeyL)
-    nmap G <Plug>(VDKeyG)
+    nmap <buffer> ^ <Plug>(VDMoveToLineStart)
+    nmap <buffer> H <Plug>(VDKeyH)
+    nmap <buffer> M <Plug>(VDKeyM)
+    nmap <buffer> L <Plug>(VDKeyL)
+    nmap <buffer> G <Plug>(VDKeyG)
 
-    xmap ^ <Plug>(VDMoveToLineStart)
-    xmap H <Plug>(VDKeyH)
-    xmap M <Plug>(VDKeyM)
-    xmap L <Plug>(VDKeyL)
-    xmap G <Plug>(VDKeyG)
+    xmap <buffer> ^ <Plug>(VDMoveToLineStart)
+    xmap <buffer> H <Plug>(VDKeyH)
+    xmap <buffer> M <Plug>(VDKeyM)
+    xmap <buffer> L <Plug>(VDKeyL)
+    xmap <buffer> G <Plug>(VDKeyG)
 
     " Item editing default binding
-    nmap cc <Plug>(VDEditWholeLine)
-    nmap S  <Plug>(VDEditWholeLine)
-    nmap I  <Plug>(VDEditAtStartOfLine)
+    nmap <buffer> cc <Plug>(VDEditWholeLine)
+    nmap <buffer> S  <Plug>(VDEditWholeLine)
+    nmap <buffer> I  <Plug>(VDEditAtStartOfLine)
 
     " Toggle @ mark
-    nmap @@ <Plug>(VDToggleResolveMark)
+    nmap <buffer> @@ <Plug>(VDToggleResolveMark)
 
     " Toggle + and * mark
-    nmap ++ <Plug>(VDToggleMarkExpand)
+    nmap <buffer> ++ <Plug>(VDToggleMarkExpand)
 
     " Toggle # mark
-    nmap ## <Plug>(VDToggleUntrackMark)
+    nmap <buffer> ## <Plug>(VDToggleUntrackMark)
 endif
 
 
