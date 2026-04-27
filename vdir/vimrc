@@ -12,6 +12,8 @@ let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:fal
 if !g:vd_disable_default_options
     " Turn off line number for not interferring with item index
     setlocal nonu
+
+    " Turn off line wrap for displaying long file paths
     setlocal nowrap
 
     " Comment settings
@@ -21,51 +23,71 @@ endif
 
 
 if !g:vd_disable_all_mappings
-    function! s:VDMoveToLineStart ()
-        if match(getline('.'), '\v^[*+@]?\d+\t') < 0
-            normal! ^
-            return
-        endif
-
-        let col0 = col('.')
-        normal! ^W
-        let col1 = col('.')
-
-        if col0 == 1
-            return
-        elseif col0 <= col1
-            normal! ^
-        endif
+    function! VDIsLineInventoryItem (line)
+        return match(a:line, '\v^[*+@#]?\d+\t') >= 0
     endfunction
 
-    function! s:VDCursorMove (key)
-        if !empty(a:key) && a:key != '^'
-            exec 'normal! ' . a:key
+    function! VDMoveToLineStart ()
+        " Not a VDInventoryItem
+        let line = getline('.')
+        if !VDIsLineInventoryItem(line)
+            return '^'
         endif
 
-        call s:VDMoveToLineStart()
+        let ret = ''
+
+        let col = col('.')
+        if col == 1
+            let ret .= '^W'
+        elseif col <= match(line, '\v\t') + 2
+            let ret .= '^'
+        else
+            let ret .= '^W'
+        endif
+
+        return ret
+    endfunction
+
+    function! VDCursorMove (key)
+        if empty(a:key) || a:key == '^'
+            return ''
+        endif
+
+        return a:key . "\<Plug>(VDKey[^])"
     endfunction
 
     " Cursor movement API
-    nnoremap <silent> <Plug>(VDMoveToLineStart) <cmd>call <SID>VDMoveToLineStart()<CR>
-    nnoremap <silent> <Plug>(VDKeyH) <cmd>call <SID>VDCursorMove('H')<CR>
-    nnoremap <silent> <Plug>(VDKeyM) <cmd>call <SID>VDCursorMove('M')<CR>
-    nnoremap <silent> <Plug>(VDKeyL) <cmd>call <SID>VDCursorMove('L')<CR>
-    nnoremap <silent> <Plug>(VDKeyG) <cmd>call <SID>VDCursorMove('G')<CR>
+    nnoremap <silent> <expr> <Plug>(VDKey[^]) VDMoveToLineStart()
+    nnoremap <silent> <expr> <Plug>(VDKey[H]) VDCursorMove('H')
+    nnoremap <silent> <expr> <Plug>(VDKey[M]) VDCursorMove('M')
+    nnoremap <silent> <expr> <Plug>(VDKey[L]) VDCursorMove('L')
+    nnoremap <silent> <expr> <Plug>(VDKey[G]) VDCursorMove('G')
+    nnoremap <silent> <expr> <Plug>(VDKey[c-u]) VDCursorMove("\<C-u>")
+    nnoremap <silent> <expr> <Plug>(VDKey[c-d]) VDCursorMove("\<C-d>")
+    nnoremap <silent> <expr> <Plug>(VDKey[c-b]) VDCursorMove("\<C-b>")
+    nnoremap <silent> <expr> <Plug>(VDKey[c-f]) VDCursorMove("\<C-f>")
 
-    xnoremap <silent> <Plug>(VDMoveToLineStart) <cmd>call <SID>VDMoveToLineStart()<CR>
-    xnoremap <silent> <Plug>(VDKeyH) <cmd>call <SID>VDCursorMove('H')<CR>
-    xnoremap <silent> <Plug>(VDKeyM) <cmd>call <SID>VDCursorMove('M')<CR>
-    xnoremap <silent> <Plug>(VDKeyL) <cmd>call <SID>VDCursorMove('L')<CR>
-    xnoremap <silent> <Plug>(VDKeyG) <cmd>call <SID>VDCursorMove('G')<CR>
+    xnoremap <silent> <expr> <Plug>(VDKey[^]) VDMoveToLineStart()
+    xnoremap <silent> <expr> <Plug>(VDKey[H]) VDCursorMove('H')
+    xnoremap <silent> <expr> <Plug>(VDKey[M]) VDCursorMove('M')
+    xnoremap <silent> <expr> <Plug>(VDKey[L]) VDCursorMove('L')
+    xnoremap <silent> <expr> <Plug>(VDKey[G]) VDCursorMove('G')
+    xnoremap <silent> <expr> <Plug>(VDKey[c-u]) VDCursorMove("\<C-u>")
+    xnoremap <silent> <expr> <Plug>(VDKey[c-d]) VDCursorMove("\<C-d>")
+    xnoremap <silent> <expr> <Plug>(VDKey[c-b]) VDCursorMove("\<C-b>")
+    xnoremap <silent> <expr> <Plug>(VDKey[c-f]) VDCursorMove("\<C-f>")
 
     " Item editing API
-    nnoremap <silent> <Plug>(VDEditWholeLine) ^<cmd>call <SID>VDMoveToLineStart()<CR>C
-    nnoremap <silent> <Plug>(VDEditAtStartOfLine) ^<cmd>call <SID>VDMoveToLineStart()<CR>i
+    nnoremap <silent> <expr> <Plug>(VDEditWholeLine) '0' . "\<Plug>(VDKey[^])" . 'C'
+    nnoremap <silent> <expr> <Plug>(VDEditAtStartOfLine) '0' . "\<Plug>(VDKey[^])" . 'i'
 
     function! VDToggleMark (mark)
         let line = getline('.')
         if empty(line)
+            return
+        endif
+
+        if !VDIsLineInventoryItem(line)
             return
         endif
 
@@ -83,43 +105,44 @@ if !g:vd_disable_all_mappings
             endif
         endfor
 
-        call setline('.', a:mark[0] . line)
-        normal! l
+        let m = matchlist(line, '\v^([*+@#]?)(\d+\t.*)$')
+        call setline('.', a:mark[0] . m[2])
+        if empty(m[1])
+            normal! l
+        endif
     endfunction
 
     " Toggle @ mark
-    function! VDToggleResolveMark ()
-        call VDToggleMark('@')
-    endfunction
-    nnoremap <silent> <Plug>(VDToggleResolveMark) <cmd>call VDToggleResolveMark()<CR>
+    nnoremap <silent> <Plug>(VDToggleResolveMark) :call VDToggleMark('@')<CR>
+    xnoremap <silent> <Plug>(VDToggleResolveMark) :call VDToggleMark('@')<CR>
 
     " Toggle + and * mark
-    function! VDToggleMarkExpand ()
-        call VDToggleMark('+*')
-    endfunction
-    nnoremap <silent> <Plug>(VDToggleMarkExpand) <cmd>call VDToggleMarkExpand()<CR>
+    nnoremap <silent> <Plug>(VDToggleExpandMark) :call VDToggleMark('+*')<CR>
+    xnoremap <silent> <Plug>(VDToggleExpandMark) :call VDToggleMark('+*')<CR>
 
     " Toggle # mark
-    function! VDToggleUntrackMark ()
-        call VDToggleMark('#')
-    endfunction
-    nnoremap <silent> <Plug>(VDToggleUntrackMark) <cmd>call VDToggleUntrackMark()<CR>
+    nnoremap <silent> <Plug>(VDToggleUntrackMark) :call VDToggleMark('#')<CR>
+    xnoremap <silent> <Plug>(VDToggleUntrackMark) :call VDToggleMark('#')<CR>
 endif
 
 
 if !g:vd_disable_default_mappings
     " Cursor movement default binding
-    nmap <buffer> ^ <Plug>(VDMoveToLineStart)
-    nmap <buffer> H <Plug>(VDKeyH)
-    nmap <buffer> M <Plug>(VDKeyM)
-    nmap <buffer> L <Plug>(VDKeyL)
-    nmap <buffer> G <Plug>(VDKeyG)
+    nmap <buffer> ^ <Plug>(VDKey[^])
+    nmap <buffer> H <Plug>(VDKey[H])
+    nmap <buffer> M <Plug>(VDKey[M])
+    nmap <buffer> L <Plug>(VDKey[L])
+    nmap <buffer> G <Plug>(VDKey[G])
+    nmap <buffer> <C-u> <Plug>(VDKey[c-u])
+    nmap <buffer> <C-d> <Plug>(VDKey[c-d])
+    nmap <buffer> <C-b> <Plug>(VDKey[c-b])
+    nmap <buffer> <C-f> <Plug>(VDKey[c-f])
 
-    xmap <buffer> ^ <Plug>(VDMoveToLineStart)
-    xmap <buffer> H <Plug>(VDKeyH)
-    xmap <buffer> M <Plug>(VDKeyM)
-    xmap <buffer> L <Plug>(VDKeyL)
-    xmap <buffer> G <Plug>(VDKeyG)
+    xmap <buffer> ^ <Plug>(VDKey[^])
+    xmap <buffer> H <Plug>(VDKey[H])
+    xmap <buffer> M <Plug>(VDKey[M])
+    xmap <buffer> L <Plug>(VDKey[L])
+    xmap <buffer> G <Plug>(VDKey[G])
 
     " Item editing default binding
     nmap <buffer> cc <Plug>(VDEditWholeLine)
@@ -128,12 +151,15 @@ if !g:vd_disable_default_mappings
 
     " Toggle @ mark
     nmap <buffer> @@ <Plug>(VDToggleResolveMark)
+    xmap <buffer> @@ <Plug>(VDToggleResolveMark)
 
     " Toggle + and * mark
-    nmap <buffer> ++ <Plug>(VDToggleMarkExpand)
+    nmap <buffer> ++ <Plug>(VDToggleExpandMark)
+    xmap <buffer> ++ <Plug>(VDToggleExpandMark)
 
     " Toggle # mark
     nmap <buffer> ## <Plug>(VDToggleUntrackMark)
+    xmap <buffer> ## <Plug>(VDToggleUntrackMark)
 endif
 
 
