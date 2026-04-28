@@ -2,10 +2,13 @@
 " vdir vimrc
 " =============================================================================
 
-let g:vd_disable_default_options = get(g:, 'vd_disable_default_options', v:false)
-let g:vd_disable_all_mappings = get(g:, 'vd_disable_all_mappings', v:false)
-let g:vd_disable_default_mappings = get(g:, 'vd_disable_default_mappings', v:false)
-let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', v:false)
+let s:true = exists('v:true') ? v:true : 1
+let s:false = exists('v:false') ? v:false : 0
+
+let g:vd_disable_default_options = get(g:, 'vd_disable_default_options', s:false)
+let g:vd_disable_all_mappings = get(g:, 'vd_disable_all_mappings', s:false)
+let g:vd_disable_default_mappings = get(g:, 'vd_disable_default_mappings', s:false)
+let g:vd_disable_syntax_highlight = get(g:, 'vd_disable_syntax_highlight', s:false)
 
 " =============================================================================
 
@@ -24,7 +27,7 @@ endif
 
 if !g:vd_disable_all_mappings
     function! VDIsLineInventoryItem (line)
-        return match(a:line, '\v^[*+@#]?\d+\t') >= 0
+        return match(a:line, '\v^[#+*@]?\d+\t') >= 0
     endfunction
 
     function! VDMoveToLineStart ()
@@ -53,7 +56,13 @@ if !g:vd_disable_all_mappings
             return ''
         endif
 
-        return a:key . "\<Plug>(VDKey[^])"
+        if v:version >= 900
+            return a:key . "\<Plug>(VDKey[^])"
+        else
+            call feedkeys(a:key, 'n')
+            call feedkeys("\<Plug>(VDKey[^])")
+            return ''
+        endif
     endfunction
 
     " Cursor movement API
@@ -105,7 +114,7 @@ if !g:vd_disable_all_mappings
             endif
         endfor
 
-        let m = matchlist(line, '\v^([*+@#]?)(\d+\t.*)$')
+        let m = matchlist(line, '\v^([#+*@]?)(\d+\t.*)$')
         call setline('.', a:mark[0] . m[2])
         if empty(m[1])
             normal! l
@@ -143,6 +152,10 @@ if !g:vd_disable_default_mappings
     xmap <buffer> M <Plug>(VDKey[M])
     xmap <buffer> L <Plug>(VDKey[L])
     xmap <buffer> G <Plug>(VDKey[G])
+    xmap <buffer> <C-u> <Plug>(VDKey[c-u])
+    xmap <buffer> <C-d> <Plug>(VDKey[c-d])
+    xmap <buffer> <C-b> <Plug>(VDKey[c-b])
+    xmap <buffer> <C-f> <Plug>(VDKey[c-f])
 
     " Item editing default binding
     nmap <buffer> cc <Plug>(VDEditWholeLine)
@@ -151,15 +164,15 @@ if !g:vd_disable_default_mappings
 
     " Toggle @ mark
     nmap <buffer> @@ <Plug>(VDToggleResolveMark)
-    xmap <buffer> @@ <Plug>(VDToggleResolveMark)
+    xmap <buffer> @ <Plug>(VDToggleResolveMark)
 
     " Toggle + and * mark
     nmap <buffer> ++ <Plug>(VDToggleExpandMark)
-    xmap <buffer> ++ <Plug>(VDToggleExpandMark)
+    xmap <buffer> + <Plug>(VDToggleExpandMark)
 
     " Toggle # mark
     nmap <buffer> ## <Plug>(VDToggleUntrackMark)
-    xmap <buffer> ## <Plug>(VDToggleUntrackMark)
+    xmap <buffer> # <Plug>(VDToggleUntrackMark)
 endif
 
 
@@ -177,7 +190,7 @@ if !g:vd_disable_syntax_highlight
     let s:ls_colors = {}
     for s:entry in split($LS_COLORS, ':')
         let s:m = matchlist(s:entry, '\v^(\w+)\=([0-9;]+)$')
-        let [s:unused, s:glob, s:code; s:unused] = s:m
+        let [s:unused1, s:glob, s:code; s:unused2] = s:m
 
         let s:code_list = split(s:code, ';')
         call map(s:code_list, 'str2nr(v:val, 10)')
@@ -239,10 +252,9 @@ if !g:vd_disable_syntax_highlight
     endif
 
     syntax match VDLinkArrow /\v *\V->\v */ containedin=VDLinkItem,VDDeadLinkItem
-    highlight VDLinkArrow ctermfg=240 " TBD
+    highlight VDLinkArrow ctermfg=240
 
     syntax match VDLinkPath /\v\t@<=\zs.*[^ ]\ze( *\V->\v)@=/ contained containedin=VDLinkItem,VDDeadLinkItem
-    highlight VDLinkPath ctermfg=220 " TBD
     if has_key(s:ls_colors, 'ln')
         exec join(['highlight', 'VDLinkPath', ] + s:ls_colors['ln'])
     endif
