@@ -93,9 +93,18 @@ class CopyCommand:
 
     def __call__(self):
         try:
+            if self.dst.exists():
+                raise FileExistsError(self.dst)
+
             mkdir_p(self.dst)
             self.preview()
-            self.src.copy(self.dst, follow_symlinks=False)
+            if self.src.is_dir() and not self.src.is_symlink():
+                shutil.copytree(self.src, self.dst,
+                                symlinks=True,
+                                copy_function=shutil.copy,
+                                ignore_dangling_symlinks=True)
+            else:
+                shutil.copy(self.src, self.dst, follow_symlinks=False)
             self.res = True
 
         except Exception as e:
@@ -106,7 +115,11 @@ class CopyCommand:
         return self.res
 
     def preview(self):
-        logger.cmd(['cp', self.src, self.dst], res=self.res)
+        if self.src.is_dir() and not self.src.is_symlink():
+            cmd = ['cp', '-r', self.src, self.dst]
+        else:
+            cmd = ['cp', self.src, self.dst]
+        logger.cmd(cmd, res=self.res)
 
 
 class MoveCommand:
@@ -142,10 +155,10 @@ class DeleteCommand:
     def __call__(self):
         try:
             self.preview()
-            if not self.src.is_dir() or self.src.is_symlink():
-                self.src.unlink()
-            else:
+            if self.src.is_dir() and not self.src.is_symlink():
                 shutil.rmtree(self.src)
+            else:
+                self.src.unlink()
             rmdir_p(self.src)
             self.res = True
 
@@ -161,10 +174,10 @@ class DeleteCommand:
         return self.res
 
     def preview(self):
-        if not self.src.is_dir() or self.src.is_symlink():
-            cmd = ['rm', self.src]
-        else:
+        if self.src.is_dir() and not self.src.is_symlink():
             cmd = ['rm', '-r', self.src]
+        else:
+            cmd = ['rm', self.src]
         logger.cmd(cmd, res=self.res)
 
 
