@@ -224,3 +224,14 @@ class VDShCmd:
                 break
 
         return (returncode, ran_cmd, stdout, stderr)
+
+
+class VDInvSortCmd:
+    def __init__(self, txt=None):
+        txt = txt or 'name'
+        self.txt = txt.strip()
+        self.args = self.txt.split()
+
+    @property
+    def text(self):
+        return ', '.join(self.args)

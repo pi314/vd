@@ -273,6 +273,11 @@ class GlobAllAction(MetaAction):
         logger.info(cyan('ExpandAll:') + cyan('[') + self.src.txt + cyan(']'))
 
 
+class SortInventoryAction(MetaAction):
+    def preview(self):
+        logger.info(cyan('Sort:') + cyan('[') + self.src.text + cyan(']'))
+
+
 def mkdir_p(path):
     try:
         if not path.parent.exists():
