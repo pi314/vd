@@ -5,9 +5,8 @@
 #TODO: Put "widgets" on the top area, move cursor onto them and press to activate
 
 # Enhancement
-#TODO: Define some commands like ":sort by date" ?
-###==> ":uniq" ?
-#TODO: Shell command expansion
+#TODO: Define some commands like ":sort xxx" ?
+###==> ":sort type atime mtime ctime name/basename path dirname"
 
 
 # =============================================================================
