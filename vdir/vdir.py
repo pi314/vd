@@ -280,7 +280,9 @@ def step_construct_raw_actions(base, new, delta_by_iii):
 
     # Index newly added paths as TrackAction
     for item in delta_by_iii[None]:
-        if isinstance(item, VDComment):
+        if item is None:
+            continue
+        elif isinstance(item, VDComment):
             continue
         elif isinstance(item, VDInvSortCmd):
             ticket_pool.register(SortInventoryAction(item))
@@ -367,7 +369,7 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         base_iii_order = [getattr(item, 'iii', 0) for item in base]
         new_iii_order = [getattr(item, 'iii', 0) for item in new]
 
-        if sorted(base_iii_order) == sorted(new_iii_order) and base_iii_order != new_iii_order:
+        if sorted(base_iii_order) != sorted(new_iii_order) or base_iii_order != new_iii_order:
             return (step_vim_edit_inventory, new, new)
 
         else:
@@ -602,14 +604,17 @@ def step_expand_inventory(new, action_list, yn):
         logger.debug(item)
     logger.debug(magenta('==== ========= ===='))
 
-    has_meta = False
+    has_inv_cmd = False
     for action in action_list:
         if isinstance(action, InvAction):
-            has_meta = True
+            has_inv_cmd = True
 
     newnew = Inventory()
     for item in new:
-        if isinstance(item, TrackingItem):
+        if item is None:
+            newnew.append(None)
+
+        elif isinstance(item, TrackingItem):
             if item.mark == '#':
                 pass
 
@@ -649,12 +654,11 @@ def step_expand_inventory(new, action_list, yn):
 
         elif isinstance(item, VDInvSortCmd):
             newnew.append(VDComment(':sort ' + item.text))
-            has_meta = True
 
     newnew.freeze()
 
-    logger.debug('has_meta', has_meta)
-    if yn.selected == '' and has_meta == 0:
+    logger.debug('has_inv_cmd', has_inv_cmd)
+    if yn.selected == '' and has_inv_cmd == 0:
         return (sys.exit, 0)
     else:
         return (step_vim_edit_inventory, newnew, newnew)
