@@ -604,7 +604,7 @@ def step_expand_inventory(new, action_list, yn):
 
     has_meta = False
     for action in action_list:
-        if isinstance(action, MetaAction):
+        if isinstance(action, InvAction):
             has_meta = True
 
     newnew = Inventory()

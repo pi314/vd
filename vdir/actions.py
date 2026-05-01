@@ -232,7 +232,7 @@ class VirtualAction:
                 '[' + ', '.join('{}'.format(repr(t)) for t in self.targets) + ']')
 
 
-class MetaAction(VirtualAction):
+class InvAction(VirtualAction):
     pass
 
 
@@ -240,7 +240,7 @@ class FSAction(VirtualAction):
     pass
 
 
-class TrackAction(MetaAction):
+class TrackAction(InvAction):
     def preview(self):
         if isinstance(self.src, VDShCmd):
             what = cyan('$(') + self.src.txt + cyan(')')
@@ -249,31 +249,31 @@ class TrackAction(MetaAction):
         logger.info(cyan('Track:') + what)
 
 
-class NoAction(MetaAction):
+class NoAction(InvAction):
     pass
 
 
-class ResolveLinkAction(MetaAction):
+class ResolveLinkAction(InvAction):
     def preview(self):
         logger.info(cyan('Resolve:') + cyan('[') + self.src.txt + cyan(']'))
 
 
-class UntrackAction(MetaAction):
+class UntrackAction(InvAction):
     def preview(self):
         logger.info(cyan('Untrack:') + cyan('[') + self.src.txt + cyan(']'))
 
 
-class GlobAction(MetaAction):
+class GlobAction(InvAction):
     def preview(self):
         logger.info(cyan('Expand:') + cyan('[') + self.src.txt + cyan(']'))
 
 
-class GlobAllAction(MetaAction):
+class GlobAllAction(InvAction):
     def preview(self):
         logger.info(cyan('ExpandAll:') + cyan('[') + self.src.txt + cyan(']'))
 
 
-class SortInventoryAction(MetaAction):
+class SortInventoryAction(InvAction):
     def preview(self):
         logger.info(cyan('Sort:') + cyan('[') + self.src.text + cyan(']'))
 
