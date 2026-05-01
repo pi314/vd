@@ -94,6 +94,10 @@ class Inventory:
             else:
                 self.content.append(vdpath)
 
+    def sort(self, cmd):
+        self.content = [item for item in self.content if item is not None]
+        self.content.sort(key=cmd.cast)
+
     def contains(self, path):
         if isinstance(path, VDPath):
             vdpath = path

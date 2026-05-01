@@ -124,6 +124,34 @@ class VDPath:
     def islink(self):
         return self.path.is_symlink()
 
+    @property
+    def fullpath(self):
+        return self.path
+
+    @property
+    def basename(self):
+        return self.path.name
+
+    @property
+    def dirname(self):
+        return self.path.parent
+
+    @property
+    def size(self):
+        return self.path.lstat().st_size
+
+    @property
+    def atime(self):
+        return self.path.lstat().st_atime
+
+    @property
+    def mtime(self):
+        return self.path.lstat().st_mtime
+
+    @property
+    def ctime(self):
+        return self.path.lstat().st_ctime
+
     def listdir(self, include_hidden):
         if not self.exists:
             return [self.txt]
@@ -234,4 +262,25 @@ class VDInvSortCmd:
 
     @property
     def text(self):
-        return ', '.join(self.args)
+        return ' '.join(self.args)
+
+    def cast(self, item):
+        def subkey(vdpath, arg):
+            if arg == 'type':
+                return (not vdpath.path.is_dir(), not vdpath.path.is_file(), not vdpath.path.is_fifo())
+            elif arg in ('isdir', 'isfile', 'isfifo', 'islink'):
+                return getattr(vdpath, arg)
+            elif arg == 'path':
+                return vdpath.fullpath
+            elif arg in ('basename', 'name'):
+                return vdpath.basename
+            elif arg == 'dirname':
+                return vdpath.dirname
+            elif arg == 'size':
+                return vdpath.size
+            elif arg in ('atime', 'mtime', 'ctime'):
+                return getattr(vdpath, arg)
+            else:
+                return vdpath
+
+        return tuple(subkey(item.path, arg) for arg in self.args)

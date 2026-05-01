@@ -278,7 +278,7 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         logger.errorflush()
         return (sys.exit, 1)
 
-    # Index newly added paths as TrackAction
+    # Register newly added items into ticket_pool
     for item in delta_by_iii[None]:
         if item is None:
             continue
@@ -519,7 +519,6 @@ def step_confirm_action_list(base, new, ticket_pool):
         return (sys.exit, 0)
 
     def action_sort_key(action):
-        action_type = 99
         if isinstance(action, DeleteAction):
             action_type = 1
         elif isinstance(action, CopyAction):
@@ -532,12 +531,16 @@ def step_confirm_action_list(base, new, ticket_pool):
             action_type = 5
         elif isinstance(action, RelinkAction):
             action_type = 6
+        else:
+            action_type = 99
 
         tgt = action.targets[0]
         if isinstance(tgt, VDPath):
             tgt = 1
         elif isinstance(tgt, (VDGlob, VDShCmd)):
             tgt = 2
+        else:
+            tgt = 99
 
         return (action_type, tgt)
 
@@ -653,6 +656,7 @@ def step_expand_inventory(new, action_list, yn):
                     newnew.append(TrackingItem(None, line))
 
         elif isinstance(item, VDInvSortCmd):
+            newnew.sort(item)
             newnew.append(VDComment(':sort ' + item.text))
 
     newnew.freeze()
