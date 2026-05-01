@@ -79,18 +79,21 @@ def hint_text():
 
     ret = [
             sepline,
-            '# - Add a path to track it.',
-            '# - Sort the paths as you want.',
-            "# - Add a '#' before the id to untrack an item.",
-            "# - Add a '+' before the id to expand non-hidden items under the directory.",
-            "# - Add a '*' before the id to expand all items under the directory.",
-            "# - Add a '@' before the id to resolve the soft link.",
+            '# - Add paths to stage them. Globs are recognized.',
+            "# - Add a '#' before id to untrack an item.",
+            "# - Add a '+' before id to expand non-hidden items under the directory.",
+            "# - Add a '*' before id to expand all items under the directory.",
+            "# - Add a '@' before id to resolve the soft link.",
+            '# - Stage items by shell command output: (globs are not supported here)',
+            '#   $ find . -type f | grep py',
+            '# - Sort with:',
+            '#   :sort [-][type|isdir|isfile|isfifo|islink|path|basename|name|dirname|size|atime|mtime|ctime|birthtime] ...',
             ]
 
     if os.path.isfile(VDIR_VIMRC_PATH):
         ret.append('# - Configure hotkeys in ' + shrinkuser(VDIR_VIMRC_PATH))
     else:
-        ret.append('# - Setup default vd.vimrc with')
+        ret.append('# - Setup default vd.vimrc with:')
         ret.append('#   $ vdir --vimrc')
 
     ret.append(sepline)
