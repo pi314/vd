@@ -152,6 +152,18 @@ class VDPath:
     def ctime(self):
         return self.path.lstat().st_ctime
 
+    @property
+    def birthtime(self):
+        return self.path.lstat().st_birthtime
+
+    @property
+    def uid(self):
+        return self.path.lstat().st_uid
+
+    @property
+    def gid(self):
+        return self.path.lstat().st_gid
+
     def listdir(self, include_hidden):
         if not self.exists:
             return [self.txt]
@@ -254,11 +266,40 @@ class VDShCmd:
         return (returncode, ran_cmd, stdout, stderr)
 
 
+class Reversed:
+    def __init__(self, obj):
+        self.obj = obj
+
+    def __lt__(self, other):
+        return not (self.obj < other.obj)
+
+    def __le__(self, other):
+        return not (self.obj <= other.obj)
+
+    def __eq__(self, other):
+        return self.obj == other.obj
+
+    def __ne__(self, other):
+        return self.obj != other.obj
+
+    def __gt__(self, other):
+        return not (self.obj > other.obj)
+
+    def __ge__(self, other):
+        return not (self.obj >= other.obj)
+
+
 class VDInvSortCmd:
     def __init__(self, txt=None):
-        txt = txt or 'name'
+        if txt == '-':
+            txt = '-dirname -type -basename'
+        else:
+            txt = txt or 'dirname type basename'
         self.txt = txt.strip()
         self.args = self.txt.split()
+
+    def __repr__(self):
+        return f'VDInvSortCmd({self.args})'
 
     @property
     def text(self):
@@ -266,21 +307,27 @@ class VDInvSortCmd:
 
     def cast(self, item):
         def subkey(vdpath, arg):
-            if arg == 'type':
-                return (not vdpath.path.is_dir(), not vdpath.path.is_file(), not vdpath.path.is_fifo())
-            elif arg in ('isdir', 'isfile', 'isfifo', 'islink'):
-                return getattr(vdpath, arg)
-            elif arg == 'path':
-                return vdpath.fullpath
-            elif arg in ('basename', 'name'):
-                return vdpath.basename
-            elif arg == 'dirname':
-                return vdpath.dirname
-            elif arg == 'size':
-                return vdpath.size
-            elif arg in ('atime', 'mtime', 'ctime'):
-                return getattr(vdpath, arg)
+            if arg.startswith('-'):
+                order = Reversed
             else:
-                return vdpath
+                order = lambda x: x
+            arg = arg.lstrip('-+')
+
+            ret = None
+            if arg == 'type':
+                ret = (not vdpath.path.is_dir(), not vdpath.path.is_file(), not vdpath.path.is_fifo())
+            elif arg in ('isdir', 'isfile', 'isfifo', 'islink'):
+                ret = not getattr(vdpath, arg)
+            elif arg == 'path':
+                ret = vdpath.fullpath
+            elif arg in ('basename', 'name'):
+                ret = vdpath.basename
+            elif arg == 'dirname':
+                ret = vdpath.dirname
+            elif arg == 'size':
+                ret = vdpath.size
+            elif arg in ('atime', 'mtime', 'ctime', 'birthtime'):
+                ret = getattr(vdpath, arg)
+            return order(ret)
 
         return tuple(subkey(item.path, arg) for arg in self.args)
