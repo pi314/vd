@@ -79,18 +79,21 @@ def hint_text():
 
     ret = [
             sepline,
-            '# - Add a path to track it.',
-            '# - Sort the paths as you want.',
-            "# - Add a '#' before the id to untrack an item.",
-            "# - Add a '+' before the id to expand non-hidden items under the directory.",
-            "# - Add a '*' before the id to expand all items under the directory.",
-            "# - Add a '@' before the id to resolve the soft link.",
+            '# - Add paths to stage them. Globs are recognized.',
+            "# - Add a '#' before id to untrack an item.",
+            "# - Add a '+' before id to expand non-hidden items under the directory.",
+            "# - Add a '*' before id to expand all items under the directory.",
+            "# - Add a '@' before id to resolve the soft link.",
+            '# - Stage items by shell command output: (globs are not supported here)',
+            '#   $ find . -type f | grep py',
+            '# - Sort with:',
+            '#   :sort [-][type|isdir|isfile|isfifo|islink|path|basename|name|dirname|size|atime|mtime|ctime|birthtime] ...',
             ]
 
     if os.path.isfile(VDIR_VIMRC_PATH):
         ret.append('# - Configure hotkeys in ' + shrinkuser(VDIR_VIMRC_PATH))
     else:
-        ret.append('# - Setup default vd.vimrc with')
+        ret.append('# - Setup default vd.vimrc with:')
         ret.append('#   $ vdir --vimrc')
 
     ret.append(sepline)
@@ -193,6 +196,9 @@ def step_vim_edit_inventory(base, inventory):
                 elif rec.fullmatch(r'\$ +(.+)'):
                     new.append(VDShCmd(rec.group(1)))
 
+                elif rec.fullmatch(r':sort( +.*)?'):
+                    new.append(VDInvSortCmd(rec.group(1)))
+
                 elif line.startswith('#'):
                     continue
 
@@ -237,7 +243,7 @@ def step_collect_inventory_delta(base, new):
         if item is None:
             continue
 
-        if isinstance(item, (VDGlob, VDPath, VDLink, VDShCmd)):
+        if isinstance(item, (VDGlob, VDPath, VDLink, VDShCmd, VDInvSortCmd)):
             delta_by_iii[None].append(item)
             continue
 
@@ -262,7 +268,6 @@ def step_collect_inventory_delta(base, new):
 def step_construct_raw_actions(base, new, delta_by_iii):
     logger.debug()
     logger.debug(FUNC_LINE())
-    logger.debug('Mapping')
 
     ticket_pool = TicketPool()
 
@@ -276,10 +281,14 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         logger.errorflush()
         return (sys.exit, 1)
 
-    # Index newly added paths as TrackAction
+    # Register newly added items into ticket_pool
     for item in delta_by_iii[None]:
-        if isinstance(item, VDComment):
+        if item is None:
             continue
+        elif isinstance(item, VDComment):
+            continue
+        elif isinstance(item, VDInvSortCmd):
+            ticket_pool.register(SortInventoryAction(item))
         elif isinstance(item, (VDGlob, VDShCmd)):
             ticket_pool.register(TrackAction(item))
         elif isinstance(item, VDPath):
@@ -363,7 +372,7 @@ def step_construct_raw_actions(base, new, delta_by_iii):
         base_iii_order = [getattr(item, 'iii', 0) for item in base]
         new_iii_order = [getattr(item, 'iii', 0) for item in new]
 
-        if sorted(base_iii_order) == sorted(new_iii_order) and base_iii_order != new_iii_order:
+        if sorted(base_iii_order) != sorted(new_iii_order) or base_iii_order != new_iii_order:
             return (step_vim_edit_inventory, new, new)
 
         else:
@@ -513,7 +522,6 @@ def step_confirm_action_list(base, new, ticket_pool):
         return (sys.exit, 0)
 
     def action_sort_key(action):
-        action_type = 99
         if isinstance(action, DeleteAction):
             action_type = 1
         elif isinstance(action, CopyAction):
@@ -526,12 +534,16 @@ def step_confirm_action_list(base, new, ticket_pool):
             action_type = 5
         elif isinstance(action, RelinkAction):
             action_type = 6
+        else:
+            action_type = 99
 
         tgt = action.targets[0]
         if isinstance(tgt, VDPath):
             tgt = 1
         elif isinstance(tgt, (VDGlob, VDShCmd)):
             tgt = 2
+        else:
+            tgt = 99
 
         return (action_type, tgt)
 
@@ -598,14 +610,17 @@ def step_expand_inventory(new, action_list, yn):
         logger.debug(item)
     logger.debug(magenta('==== ========= ===='))
 
-    has_meta = False
+    has_inv_cmd = False
     for action in action_list:
-        if isinstance(action, MetaAction):
-            has_meta = True
+        if isinstance(action, InvAction):
+            has_inv_cmd = True
 
     newnew = Inventory()
     for item in new:
-        if isinstance(item, TrackingItem):
+        if item is None:
+            newnew.append(None)
+
+        elif isinstance(item, TrackingItem):
             if item.mark == '#':
                 pass
 
@@ -643,10 +658,14 @@ def step_expand_inventory(new, action_list, yn):
                 if not new.contains(line) and not newnew.contains(line):
                     newnew.append(TrackingItem(None, line))
 
+        elif isinstance(item, VDInvSortCmd):
+            newnew.sort(item)
+            newnew.append(VDComment(':sort ' + item.text))
+
     newnew.freeze()
 
-    logger.debug('has_meta', has_meta)
-    if yn.selected == '' and has_meta == 0:
+    logger.debug('has_inv_cmd', has_inv_cmd)
+    if yn.selected == '' and has_inv_cmd == 0:
         return (sys.exit, 0)
     else:
         return (step_vim_edit_inventory, newnew, newnew)

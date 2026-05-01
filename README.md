@@ -18,6 +18,12 @@ With a few different design choices:
 
 *   `vdir` supports stage/unstage items dynamically
 
+*   `vdir` supports stage/unstage items dynamically from shell commands' output
+
+    -   Shell commands could be piped
+
+*   `vdir` supports sorting staged items by several attributes, each of them could be reversed
+
 *   `vdir` treats symbolic links as files instead of resolving them
 
 *   `vdir` supports editing symbolic links
@@ -47,13 +53,16 @@ A `vdir`'s vim session looks like this:
 
 ```console
 # ═════════════════════════════════════════════════════════════════════════════
-# - Add a path to track it.
-# - Sort the paths as you want.
-# - Add a '#' before the id to untrack an item.
-# - Add a '+' before the id to expand non-hidden items under the directory.
-# - Add a '*' before the id to expand all items under the directory.
-# - Add a '@' before the id to resolve the soft link.
-# - Setup default vdir.vimrc with
+# - Add paths to stage them. Globs are recognized.
+# - Add a '#' before id to untrack an item.
+# - Add a '+' before id to expand non-hidden items under the directory.
+# - Add a '*' before id to expand all items under the directory.
+# - Add a '@' before id to resolve the soft link.
+# - Stage items by shell command output: (globs are not supported here)
+#   $ find . -type f | grep py
+# - Sort with:
+#   :sort [-][type|isdir|isfile|isfifo|islink|path|basename|name|dirname|size|atime|mtime|ctime|birthtime] ...
+# - Setup default vd.vimrc with:
 #   $ vdir --vimrc
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -64,7 +73,19 @@ A `vdir`'s vim session looks like this:
 151 ││ vdir/
 ```
 
-Edit the content, save and quit, and `vdir` prompts you the changes like this:
+Paths could be added directly for next round editing.
+
+Shell commands could be used to add paths in batch.
+Shell commands could be piped, but note that commands are ran one-by-one,
+i.e. each command's stdout is collected, returncode is checked,
+and then all pipe to stdin of the next command.
+
+If one command fails (i.e. returncode != 0), the pipeline stops, and stderr is appended in comment.
+
+The inventory could be sorted with `:sort` command.
+Several attributes are available, each of them could be prefixed with `-` for reversing the order.
+
+When you're done, save and quit, and `vdir` prompts you the changes like this:
 
 ```
 [info] Delete:[LICENSE]

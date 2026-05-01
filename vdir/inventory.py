@@ -84,7 +84,7 @@ class Inventory:
         elif iii is not None:
             self.content.append(TrackingItem(int(iii, 10), text, mark=mark))
 
-        elif isinstance(text, (VDPath, VDGlob, VDLink, VDShCmd)):
+        elif isinstance(text, (VDPath, VDGlob, VDLink, VDShCmd, VDInvSortCmd)):
             self.content.append(text)
 
         else:
@@ -93,6 +93,10 @@ class Inventory:
                 self.content.append(VDLink(text))
             else:
                 self.content.append(vdpath)
+
+    def sort(self, cmd):
+        self.content = [item for item in self.content if item is not None]
+        self.content.sort(key=cmd.cast)
 
     def contains(self, path):
         if isinstance(path, VDPath):
