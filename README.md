@@ -18,6 +18,12 @@ With a few different design choices:
 
 *   `vdir` supports stage/unstage items dynamically
 
+*   `vdir` supports stage/unstage items dynamically from shell commands' output
+
+    -   Shell commands could be piped
+
+*   `vdir` supports sorting staged items by several attributes, each of them could be reversed
+
 *   `vdir` treats symbolic links as files instead of resolving them
 
 *   `vdir` supports editing symbolic links
@@ -67,7 +73,19 @@ A `vdir`'s vim session looks like this:
 151 ││ vdir/
 ```
 
-Edit the content, save and quit, and `vdir` prompts you the changes like this:
+Paths could be added directly for next round editing.
+
+Shell commands could be used to add paths in batch.
+Shell commands could be piped, but note that commands are ran one-by-one,
+i.e. each command's stdout is collected, returncode is checked,
+and then all pipe to stdin of the next command.
+
+If one command fails (i.e. returncode != 0), the pipeline stops, and stderr is appended in comment.
+
+The inventory could be sorted with `:sort` command.
+Several attributes are available, each of them could be prefixed with `-` for reversing the order.
+
+When you're done, save and quit, and `vdir` prompts you the changes like this:
 
 ```
 [info] Delete:[LICENSE]
