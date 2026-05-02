@@ -73,29 +73,34 @@ class Inventory:
             return False
         return self.content == other.content
 
-    def append(self, text, iii=None, mark=None):
-        if text is None:
-            if (self.content or [None])[-1] is not None:
+    def clear(self):
+        self.content.clear()
+
+    def append(self, thing, iii=None, mark=None):
+        if thing is None:
+            if self.content and self.content[-1] is not None:
                 self.content.append(None)
 
-        elif isinstance(text, (TrackingItem, VDComment)):
-            self.content.append(text)
+        elif isinstance(thing, (TrackingItem, VDComment)):
+            self.content.append(thing)
 
         elif iii is not None:
-            self.content.append(TrackingItem(int(iii, 10), text, mark=mark))
+            self.content.append(TrackingItem(int(iii, 10), thing, mark=mark))
 
-        elif isinstance(text, (VDPath, VDGlob, VDLink, VDShCmd, VDInvSortCmd)):
-            self.content.append(text)
+        elif isinstance(thing, (VDPath, VDGlob, VDLink, VDShCmd, VDInvSortCmd)):
+            self.content.append(thing)
 
         else:
-            vdpath = VDPath(text)
+            vdpath = VDPath(thing)
             if vdpath.islink:
-                self.content.append(VDLink(text))
+                self.content.append(VDLink(thing))
             else:
                 self.content.append(vdpath)
 
     def sort(self, cmd):
-        self.content = [item for item in self.content if item is not None]
+        self.content = [item
+                        for item in self.content
+                        if item is not None and not isinstance(item, VDComment)]
         self.content.sort(key=cmd.cast)
 
     def contains(self, path):

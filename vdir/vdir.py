@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
 
-# Vim related
-#TODO: Check if iii.type enum definition could be reused for vim and python
-#TODO: Put "widgets" on the top area, move cursor onto them and press to activate
-
-# Enhancement
-#TODO: Define some commands like ":sort xxx" ?
-###==> ":sort type atime mtime ctime name/basename path dirname"
-
-
 # =============================================================================
 # Package Imports
 # =============================================================================
@@ -47,6 +38,8 @@ options = argparse.Namespace(
 
 VDIR_VIMRC_PATH = Path.home() / '.config' / 'vdir' / 'vdir.vimrc'
 
+SEPLINE = ('═' * 77)
+
 # -----------------------------------------------------------------------------
 # Global variables }
 # =============================================================================
@@ -55,10 +48,6 @@ VDIR_VIMRC_PATH = Path.home() / '.config' / 'vdir' / 'vdir.vimrc'
 # =============================================================================
 # Generalized Utilities {
 # -----------------------------------------------------------------------------
-
-RLB = red('[')
-RRB = red(']')
-
 
 def FUNC_LINE():
     cf = inspect.currentframe()
@@ -74,8 +63,8 @@ def FUNC_LINE():
 # Specialized Utilities {
 # -----------------------------------------------------------------------------
 
-def hint_text():
-    sepline = '# ' + ('═' * 77)
+def hint_banner():
+    sepline = '# ' + SEPLINE
 
     ret = [
             sepline,
@@ -130,7 +119,7 @@ def step_vim_edit_inventory(base, inventory):
     with tempfile.NamedTemporaryFile(prefix='vd', suffix='.vd') as tf:
         # Write inventory into tempfile
         with open(tf.name, mode='w', encoding='utf8') as f:
-            f.writelines(hint_text())
+            f.writelines(hint_banner())
             f.writeline()
 
             for item in inventory:
@@ -172,15 +161,26 @@ def step_vim_edit_inventory(base, inventory):
 
         # Parse tempfile content
         new = Inventory()
+        hint_banner_lines = set(hint_banner())
         with open(tf.name, mode='r', encoding='utf8') as f:
+            in_banner = True
             for line in f.readlines():
+                if line and not line.startswith('#'):
+                    in_banner = False
+
+                if in_banner and line in hint_banner_lines:
+                    continue
+
                 if not line:
                     new.append(None)
                     continue
 
                 rec = rere(line)
 
-                if rec.fullmatch(r'([#+*@]?) *(\d+)\t+(.*)'):
+                if in_banner and rec.fullmatch(r'# *' + SEPLINE[0] + '{4,}'):
+                    new.clear()
+
+                elif rec.fullmatch(r'([#+*@]?) *(\d+)\t+(.*)'):
                     mark, iii, path = rec.groups()
 
                     if '->' in path:
@@ -200,7 +200,7 @@ def step_vim_edit_inventory(base, inventory):
                     new.append(VDInvSortCmd(rec.group(1)))
 
                 elif line.startswith('#'):
-                    continue
+                    new.append(VDComment(line.lstrip('# ')))
 
                 else:
                     if '*' in line:
@@ -240,7 +240,7 @@ def step_collect_inventory_delta(base, new):
 
     # Attach items from new inventory into item mapping
     for item in new:
-        if item is None:
+        if item is None or isinstance(item, VDComment):
             continue
 
         if isinstance(item, (VDGlob, VDPath, VDLink, VDShCmd, VDInvSortCmd)):
@@ -619,6 +619,9 @@ def step_expand_inventory(new, action_list, yn):
     for item in new:
         if item is None:
             newnew.append(None)
+
+        elif isinstance(item, VDComment):
+            newnew.append(item)
 
         elif isinstance(item, TrackingItem):
             if item.mark == '#':
