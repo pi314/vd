@@ -22,6 +22,7 @@ from pathlib import Path
 
 from . import logger
 
+from .version import __version__
 from .vdpath import *
 from .utils import *
 from .inventory import *
@@ -730,6 +731,8 @@ def main():
             )),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         )
+
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__)
 
     parser.add_argument('-a', '--all', action='store_true',
             default=False,

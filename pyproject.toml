@@ -25,7 +25,7 @@ classifiers = [
 
 
 [tool.hatch.version]
-path = "vdir/__init__.py"
+path = "vdir/version.py"
 
 
 [project.scripts]

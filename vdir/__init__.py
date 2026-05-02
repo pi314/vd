@@ -1,3 +1,3 @@
 from .vdir import main
 
-__version__ = '0.4.0'
+from .version import __version__
