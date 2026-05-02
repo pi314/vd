@@ -31,9 +31,20 @@ With a few different design choices:
 
 Examples (shell)
 -------------------------------------------------------------------------------
-Edit the current diretory:
+Check version
+```console
+sh$ vdir --version
+vdir 0.4.1
+```
+
+Manage current diretory:
 ```console
 sh$ vdir
+```
+
+Manage everything including hidden files in current diretory:
+```console
+sh$ vdir -a
 ```
 
 Manage certain files:
@@ -84,6 +95,8 @@ If one command fails (i.e. returncode != 0), the pipeline stops, and stderr is a
 
 The inventory could be sorted with `:sort` command.
 Several attributes are available, each of them could be prefixed with `-` for reversing the order.
+For example, `:sort dirname -type basename` sorts the inventory with `dirname` ascending,
+`type` decending, and `basename` ascending.
 
 When you're done, save and quit, and `vdir` prompts you the changes like this:
 
