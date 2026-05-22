@@ -276,15 +276,17 @@ class CompressAction(FSAction):
     def __init__(self, *targets, keep=True):
         super().__init__(*targets)
         self.keep = keep
+        self.cmd = None
 
     def preview(self):
         color = lime if self.keep else yellow
         logger.info(color('Compress:') + color('[') + self.src.txt + color(']'))
         logger.info(color('└───────►') + color('[') + self.dst.txt + color(']'))
+        self.cmd = CompressCommand(self.src, self.dst, self.keep)
 
     def apply(self):
         try:
-            return CompressCommand(self.src, self.dst, self.keep)()
+            return self.cmd()
         except Exception as e:
             logger.error(e)
             return False
@@ -294,15 +296,17 @@ class UncompressAction(FSAction):
     def __init__(self, *targets, keep=True):
         super().__init__(*targets)
         self.keep = keep
+        self.cmd = None
 
     def preview(self):
         color = lime if self.keep else yellow
         logger.info(color('Extract:') + color('[') + self.src.txt + color(']'))
         logger.info(color('└──────►') + color('[') + self.dst.txt + color(']'))
+        self.cmd = UncompressCommand(self.src, self.dst, keep=self.keep)
 
     def apply(self):
         try:
-            return UncompressCommand(self.src, self.dst, keep=self.keep)()
+            return self.cmd()
         except Exception as e:
             logger.error(e)
             return False

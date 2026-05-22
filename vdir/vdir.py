@@ -510,7 +510,7 @@ def step_merge_actions(base, new, ticket_pool):
     has_fuse = True
     while has_fuse:
         logger.debug()
-        logger.debug('iteration')
+        logger.debug('fuse iteration')
         has_fuse = False
         for ticket in ticket_pool.ticket_list:
             if not isinstance(ticket.action, RenameAction):
@@ -618,6 +618,9 @@ def step_confirm_action_list(base, new, ticket_pool):
             action.preview()
         else:
             logger.debug(repr(action))
+
+    if logger.has_error():
+        return (step_ask_fix_it, base, new)
 
     if all(isinstance(action, (TrackAction, UntrackAction, GlobAction, GlobAllAction)) for action in action_list):
         yes = True

@@ -269,6 +269,9 @@ class CompressCommand:
             util = '7z'
             flags = ['a']
 
+        if not shutil.which(util):
+            logger.error('Command not found:', util)
+
         self.tar_cvf = ShellCommand([util] + flags + [self.dst.path, self.src.path])
 
     def __call__(self):
