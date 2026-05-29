@@ -38,16 +38,21 @@ if !g:vdir_disable_all_mappings
         return match(a:line, '\v^[#+*@]?\d+\t') >= 0
     endfunction
 
-    function! VDMoveToLineStart ()
+    function! VDMoveToLineStart (base)
         " Not a VDInventoryItem
         let line = getline('.')
         if !VDIsLineInventoryItem(line)
             return '^'
         endif
 
-        let ret = ''
+        if a:base == '0'
+            let ret = '0'
+            let col = 1
+        else
+            let ret = ''
+            let col = col('.')
+        endif
 
-        let col = col('.')
         if col == 1
             let ret .= '^W'
         elseif col <= match(line, '\v\t') + 2
@@ -74,7 +79,7 @@ if !g:vdir_disable_all_mappings
     endfunction
 
     " Cursor movement API
-    nnoremap <silent> <expr> <Plug>(VDKey[^]) VDMoveToLineStart()
+    nnoremap <silent> <expr> <Plug>(VDKey[^]) VDMoveToLineStart('.')
     nnoremap <silent> <expr> <Plug>(VDKey[H]) VDCursorMove('H')
     nnoremap <silent> <expr> <Plug>(VDKey[M]) VDCursorMove('M')
     nnoremap <silent> <expr> <Plug>(VDKey[L]) VDCursorMove('L')
@@ -84,7 +89,7 @@ if !g:vdir_disable_all_mappings
     nnoremap <silent> <expr> <Plug>(VDKey[c-b]) VDCursorMove("\<C-b>")
     nnoremap <silent> <expr> <Plug>(VDKey[c-f]) VDCursorMove("\<C-f>")
 
-    xnoremap <silent> <expr> <Plug>(VDKey[^]) VDMoveToLineStart()
+    xnoremap <silent> <expr> <Plug>(VDKey[^]) VDMoveToLineStart('.')
     xnoremap <silent> <expr> <Plug>(VDKey[H]) VDCursorMove('H')
     xnoremap <silent> <expr> <Plug>(VDKey[M]) VDCursorMove('M')
     xnoremap <silent> <expr> <Plug>(VDKey[L]) VDCursorMove('L')
@@ -95,8 +100,8 @@ if !g:vdir_disable_all_mappings
     xnoremap <silent> <expr> <Plug>(VDKey[c-f]) VDCursorMove("\<C-f>")
 
     " Item editing API
-    nnoremap <silent> <expr> <Plug>(VDEditWholeLine) '0' . "\<Plug>(VDKey[^])" . 'C'
-    nnoremap <silent> <expr> <Plug>(VDEditAtStartOfLine) '0' . "\<Plug>(VDKey[^])" . 'i'
+    nnoremap <silent> <expr> <Plug>(VDEditWholeLine) VDMoveToLineStart('0') . 'C'
+    nnoremap <silent> <expr> <Plug>(VDEditAtStartOfLine) VDMoveToLineStart('0') . 'i'
 
     function! VDToggleMark (mark)
         let line = getline('.')
