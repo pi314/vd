@@ -305,7 +305,15 @@ class UncompressCommand:
         self.keep = keep
         self.res = None
         self.mkdir = MkdirsCommand(self.dst)
-        self.tar_xvf = ShellCommand(['tar', 'xvf', self.src.path, '--cd', self.dst.path])
+
+        util = 'tar'
+        flags = ['-x', '-v', '-f', self.src.path]
+        dir_flags = ['--cd', self.dst.path]
+        if src.name.endswith('.zip'):
+            util = 'unzip'
+            flags = [self.src.path]
+            dir_flags = ['-d', self.dst.path]
+        self.tar_xvf = ShellCommand([util] + flags + dir_flags)
 
     def __call__(self):
         try:
