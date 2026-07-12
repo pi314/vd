@@ -700,8 +700,9 @@ def step_expand_inventory(new, action_list, yn):
 
             elif item.mark == '@':
                 # ResolveLinkAction takes effect here
-                if not new.contains(item.path.ref) and not newnew.contains(item.path.ref):
-                    newnew.append(TrackingItem(None, item.path.ref))
+                ref = item.path.lnk.resolve()
+                if not new.contains(ref) and not newnew.contains(ref):
+                    newnew.append(TrackingItem(None, ref))
 
             else:
                 if not newnew.contains(item.path):

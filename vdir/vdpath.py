@@ -219,6 +219,9 @@ class VDPath:
             ref = ref.path
         self.path.symlink_to(ref)
 
+    def resolve(self):
+        return VDPath(self.path.resolve())
+
 
 class VDLink:
     def __init__(self, lnk, ref=None):
