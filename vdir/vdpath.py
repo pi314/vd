@@ -190,6 +190,9 @@ class VDPath:
 
         return ret
 
+    def resolve(self):
+        return VDPath(self.path.resolve())
+
 
 class VDLink:
     def __init__(self, lnk, ref=None):
