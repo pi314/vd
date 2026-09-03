@@ -74,6 +74,9 @@ def has_error():
 
 
 def cmd(c, tag=None, **kwargs):
+    if not c:
+        return
+
     if kwargs.get('res') not in (None, True):
         prompt_color = red
     else:

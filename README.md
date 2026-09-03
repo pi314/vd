@@ -28,6 +28,8 @@ With a few different design choices:
 
 *   `vdir` supports editing symbolic links
 
+*   `vdir` supports compress/uncompress files by `tar`, `zip`, and `7z`.
+
 
 Examples (shell)
 -------------------------------------------------------------------------------

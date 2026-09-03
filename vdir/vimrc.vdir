@@ -222,10 +222,17 @@ endif
 
 let s:ls_colors = {}
 if !g:vdir_ignore_ls_colors
-    " Parse $LS_COLORS for basic highlighting
-    for s:entry in split($LS_COLORS, ':')
+    " Parse $EZA_COLORS and $LS_COLORS for basic highlighting
+    for s:entry in split($EZA_COLORS . ':' . $LS_COLORS, ':')
         let s:m = matchlist(s:entry, '\v^(\w+)\=([0-9;]+)$')
+        if empty(s:m)
+            continue
+        endif
+
         let [s:unused1, s:glob, s:code; s:unused2] = s:m
+        if has_key(s:ls_colors, s:glob)
+            continue
+        endif
 
         let s:code_list = split(s:code, ';')
         call map(s:code_list, 'str2nr(v:val, 10)')

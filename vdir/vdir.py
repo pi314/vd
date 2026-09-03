@@ -265,7 +265,6 @@ def step_collect_inventory_delta(base, new):
         delta_by_iii[item.iii].append(item)
 
     if logger.has_error():
-        logger.errorflush()
         return (step_ask_fix_it, base, new)
 
     return (step_construct_raw_actions, base, new, delta_by_iii)
@@ -407,33 +406,42 @@ def step_merge_actions(base, new, ticket_pool):
     # dump
     logger.debug(magenta('==== before merge ===='))
     dump()
-    logger.debug(magenta('-------------------------'))
 
-    # Pass 1, conflict check
+    # Conflict check
+    logger.debug(magenta('---- Conflict check -----'))
     for path, actions in ticket_pool.by_path.items():
-        if len(actions.get('to', [])) > 1:
+        to_list = actions.get('to', [])
+        from_list = actions.get('from', [])
+        nop_list = actions.get('nop', [])
+
+        if len(to_list) > 1:
             logger.errorq('Conflict: multiple copy/move into single destination')
-            for ticket in actions['to']:
+            for ticket in to_list:
                 logger.errorq(f'From: {ticket.action.src}')
             logger.errorq(f'To  : {path}')
 
-        elif actions.get('to', []) and not actions.get('from', []) and path.exists():
-            logger.errorq('Conflict: has risk override existing file')
-            for ticket in actions['to']:
-                logger.errorq(f'From: {ticket.action.src}')
-            logger.errorq(f'To: {path}')
+        elif path.exists() and to_list and not from_list:
+            problems = [ticket
+                        for ticket in to_list
+                        if ticket.action.src.inode != ticket.action.dst.inode
+                        and not ticket_pool[ticket.action.dst].get('delete')]
+            if problems:
+                logger.errorq('Conflict: has risk overwrite existing file')
+                for ticket in problems:
+                    logger.errorq(f'From: {ticket.action.src}')
+                logger.errorq(f'To: {path}')
 
-        elif (len(actions.get('nop', [])) + len(actions.get('to', []))) > 1:
-            logger.errorq('Conflict: override tracking item')
-            for ticket in actions.get('nop', []) + actions.get('to', []):
+        elif (len(nop_list) + len(to_list)) > 1:
+            logger.errorq('Conflict: overwrite tracking item')
+            for ticket in nop_list + to_list:
                 logger.errorq(f'From: {ticket.action.src}')
             logger.errorq(f'To  : {path}')
 
     if logger.has_error():
-        logger.errorflush()
         return (step_ask_fix_it, base, new)
 
-    # Pass 2, cancel DeleteAction if TrackAction exists
+    # Cancel DeleteAction if TrackAction exists
+    logger.debug(magenta('---- Reduce DeleteAction ----'))
     for path, actions in ticket_pool.by_path.items():
         if 'delete' in actions and not path.exists():
             for ticket in actions['delete']:
@@ -442,9 +450,9 @@ def step_merge_actions(base, new, ticket_pool):
             for ticket in actions['delete']:
                 ticket.action = NoAction(ticket.action.src)
     dump()
-    logger.debug(magenta('---- pass 2 fin ---------'))
 
-    # Pass 3, transform (CopyAction && !NoAction) into RenameAction
+    # Transform (CopyAction && !NoAction) into RenameAction
+    logger.debug(magenta('---- Construct RenameAction ----'))
     for path, actions in ticket_pool.by_path.items():
         if 'from' in actions and 'nop' not in actions:
             for ticket in actions['from']:
@@ -452,13 +460,57 @@ def step_merge_actions(base, new, ticket_pool):
                     ticket.action = RenameAction(ticket.action.src, ticket.action.dst)
                     break
     dump()
-    logger.debug(magenta('---- pass 3 fin ---------'))
 
-    # Pass 4, fuse contiguous RenameActions into Rotate RenameAction
+    # Transform CopyAction(*, .tar) into CompressAction
+    # Transform CopyAction(.tar, *) into UncompressAction
+    suffix_list = ('.tar',
+                   '.tar.xz', '.xz',
+                   '.tar.bz', '.tar.bz2', '.tbz', '.tbz2', '.bz', '.bz2',
+                   '.tar.gz', '.gz', '.tgz',
+                   '.tar.Z', '.Z',
+                   '.zip', '.7z',
+                   )
+    logger.debug(magenta('---- Construct CompressAction/UncompressAction ----'))
+    for ticket in ticket_pool.ticket_list:
+        if isinstance(ticket.action, (CopyAction, RenameAction)):
+            is_copy = isinstance(ticket.action, CopyAction)
+            src = ticket.action.src
+            dst = ticket.action.dst
+            if src.name.endswith(suffix_list) and dst.name.endswith(suffix_list):
+                pass
+            elif dst.name.endswith(suffix_list):
+                ticket.action = CompressAction(src, dst, keep=is_copy)
+            elif src.name.endswith(suffix_list):
+                ticket.action = UncompressAction(src, dst, keep=is_copy)
+    dump()
+
+    # Check src/dst isdir/isfile/isfifo/islink consistency
+    logger.debug(magenta('---- Check src/dst type consistency ----'))
+    def file_type(f):
+        if f.isdir:
+            return ls_colors('di')(' (dir)')
+        elif f.isfile:
+            return '(file)'
+        elif f.islink:
+            return ls_colors('ln')('(link)')
+        elif f.isfifo:
+            return ls_colors('pi')('(fifo)')
+        return red('what')
+    for ticket in ticket_pool:
+        if isinstance(ticket.action, (CopyAction, RenameAction)):
+            if ticket.action.dst.exists and file_type(ticket.action.src) != file_type(ticket.action.dst):
+                logger.errorq()
+                logger.errorq('Conflict: file type changed')
+                logger.errorq(file_type(ticket.action.src), '│', ticket.action.src)
+                logger.errorq(file_type(ticket.action.dst), '│', ticket.action.dst)
+    dump()
+
+    # Fuse contiguous RenameActions into Rotate RenameAction
+    logger.debug(magenta('---- Fuse RenameAction ----'))
     has_fuse = True
     while has_fuse:
         logger.debug()
-        logger.debug('loop')
+        logger.debug('fuse iteration')
         has_fuse = False
         for ticket in ticket_pool.ticket_list:
             if not isinstance(ticket.action, RenameAction):
@@ -496,7 +548,6 @@ def step_merge_actions(base, new, ticket_pool):
     logger.debug(magenta('==== after merge ===='))
 
     if logger.has_error():
-        logger.errorflush()
         return (step_ask_fix_it, base, new)
 
     return (step_confirm_action_list, base, new, ticket_pool)
@@ -509,8 +560,8 @@ def step_ask_fix_it(base, new):
     logger.errorflush()
     logger.errorclear()
 
-    user_confirm = prompt('Fix it?', ['edit', 'redo', 'quit'],
-            allow_empty_input=False)
+    user_confirm = prompt('Fix it?', ['edit', 'redo', 'no', 'quit'],
+            accept_empty=False)
 
     if user_confirm == 'edit':
         return (step_vim_edit_inventory, base, new)
@@ -568,7 +619,10 @@ def step_confirm_action_list(base, new, ticket_pool):
         else:
             logger.debug(repr(action))
 
-    if all(isinstance(action, (TrackAction, UntrackAction)) for action in action_list):
+    if logger.has_error():
+        return (step_ask_fix_it, base, new)
+
+    if all(isinstance(action, (TrackAction, UntrackAction, GlobAction, GlobAllAction)) for action in action_list):
         yes = True
     else:
         yes = False
@@ -602,6 +656,7 @@ def step_apply_change_list(base, new, action_list, yn):
             continue
 
         if hasattr(action, 'apply'):
+            logger.debug(action)
             ret = action.apply()
             if ret is False:
                 logger.error('Action failed')
@@ -638,6 +693,7 @@ def step_expand_inventory(new, action_list, yn):
                 pass
 
             elif item.mark in ('*', '+'):
+                # GlobAction and GlobAllAction take effect here
                 for p in item.path.listdir(item.mark == '*'):
                     if not new.contains(p) and not newnew.contains(p):
                         newnew.append(TrackingItem(None, p))
@@ -857,6 +913,9 @@ def main():
         except AttributeError:
             return a
 
+    # for key, value in ls_colors().items():
+    #     print(key, repr(value), value('test'))
+    # sys.exit(1)
     prev_call = None
     next_call = (step_vim_edit_inventory, inventory, inventory)
     while next_call:
@@ -866,9 +925,9 @@ def main():
             prev_call = (func, *args)
             next_call = func(*args)
 
-            if logger.has_error():
-                logger.errorflush()
-                sys.exit(1)
+            # if logger.has_error():
+            #     logger.errorflush()
+            #     sys.exit(1)
 
         except TypeError as e:
             logger.errorq(e)

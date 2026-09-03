@@ -1,4 +1,5 @@
 import shutil
+import subprocess
 
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from . import logger
 from .utils import *
 from .vdpath import *
 from .inventory import *
+from .fscmd import *
 
 
 class TicketPool:
@@ -22,6 +24,9 @@ class TicketPool:
 
     def __iter__(self):
         return iter(self.ticket_list)
+
+    def __getitem__(self, key):
+        return self.by_path.get(self.to_path(key), {})
 
     def to_path(self, arg):
         if isinstance(arg, (VDPath, VDLink)):
@@ -86,129 +91,6 @@ class Ticket:
 
     def __repr__(self):
         return f'({self.action}, {self.participants})'
-
-
-class CopyCommand:
-    def __init__(self, src, dst):
-        self.src = src
-        self.dst = dst
-        self.res = None
-
-    def __call__(self):
-        try:
-            if self.dst.exists():
-                raise FileExistsError(self.dst)
-
-            mkdir_p(self.dst)
-            self.preview()
-            if self.src.is_dir() and not self.src.is_symlink():
-                shutil.copytree(self.src, self.dst,
-                                symlinks=True,
-                                copy_function=shutil.copy,
-                                ignore_dangling_symlinks=True)
-            else:
-                shutil.copy(self.src, self.dst, follow_symlinks=False)
-            self.res = True
-
-        except Exception as e:
-            logger.error(e)
-            self.res = False
-            self.preview()
-
-        return self.res
-
-    def preview(self):
-        if self.src.is_dir() and not self.src.is_symlink():
-            cmd = ['cp', '-r', self.src, self.dst]
-        else:
-            cmd = ['cp', self.src, self.dst]
-        logger.cmd(cmd, res=self.res)
-
-
-class MoveCommand:
-    def __init__(self, src, dst):
-        self.src = src
-        self.dst = dst
-        self.res = None
-
-    def __call__(self):
-        try:
-            mkdir_p(self.dst)
-            self.preview()
-            self.src.rename(self.dst)
-            rmdir_p(self.src)
-            self.res = True
-
-        except Exception as e:
-            logger.error(e)
-            self.res = False
-            self.preview()
-
-        return self.res
-
-    def preview(self):
-        logger.cmd(['mv', self.src, self.dst], res=self.res)
-
-
-class DeleteCommand:
-    def __init__(self, src):
-        self.src = src
-        self.res = None
-
-    def __call__(self):
-        try:
-            self.preview()
-            if self.src.is_dir() and not self.src.is_symlink():
-                shutil.rmtree(self.src)
-            else:
-                self.src.unlink()
-            rmdir_p(self.src)
-            self.res = True
-
-        except Exception as e:
-            if not self.src.exists():
-                # Delete failed but it's gone so ok
-                logger.warning(e)
-            else:
-                logger.error(e)
-                self.res = False
-                self.preview()
-
-        return self.res
-
-    def preview(self):
-        if self.src.is_dir() and not self.src.is_symlink():
-            cmd = ['rm', '-r', self.src]
-        else:
-            cmd = ['rm', self.src]
-        logger.cmd(cmd, res=self.res)
-
-
-class RelinkCommand:
-    def __init__(self, lnk, ref):
-        self.lnk = lnk
-        self.ref = ref
-        self.res = None
-
-    def __call__(self):
-        try:
-            self.preview()
-            if self.lnk.exists() or self.lnk.is_symlink():
-                self.lnk.unlink()
-            self.lnk.symlink_to(self.ref)
-            self.res = True
-
-        except Exception as e:
-            logger.error(e)
-            self.res = False
-            self.preview()
-
-        return self.res
-
-    def preview(self):
-        if self.lnk.exists() or self.lnk.is_symlink():
-            logger.cmd(['rm', self.lnk], res=self.res)
-        logger.cmd(['ln', '-s', self.ref, self.lnk], res=self.res)
 
 
 class VirtualAction:
@@ -281,51 +163,13 @@ class SortInventoryAction(InvAction):
         logger.info(cyan('Sort:') + cyan('[') + self.src.text + cyan(']'))
 
 
-def mkdir_p(path):
-    try:
-        if not path.parent.exists():
-            logger.cmd(['mkdir', '-p', path.parent])
-            path.parent.mkdir(parents=True, exist_ok=True)
-    except:
-        return
-
-
-def rmdir_p(path):
-    try:
-        cwd = Path.cwd().resolve()
-        for probe in path.resolve().parents:
-            # Delete .DS_Store if present
-            try:
-                (probe / '.DS_Store').unlink()
-            except:
-                pass
-
-            if probe == cwd:
-                # dont delete cwd
-                return True
-
-            if not probe.is_dir():
-                # something weird happen
-                return
-
-            for child in probe.iterdir():
-                # if probe/ is not empty, return
-                return True
-
-            # probe/ is empty, delete it
-            logger.cmd(['rmdir', probe])
-            probe.rmdir()
-    except:
-        return
-
-
 class DeleteAction(FSAction):
     def preview(self):
         logger.info(red('Delete:') + red('[') + self.src.txt + red(']'))
 
     def apply(self):
         try:
-            return DeleteCommand(self.src.path)()
+            return DeleteCommand(self.src)()
         except Exception as e:
             logger.error(e)
             return False
@@ -333,12 +177,12 @@ class DeleteAction(FSAction):
 
 class CopyAction(FSAction):
     def preview(self):
-        logger.info(yellow('Copy:') + yellow('[') + self.src.txt + yellow(']'))
-        logger.info(yellow('└───►') + yellow('[') + self.dst.txt + yellow(']'))
+        logger.info(lime('Copy:') + lime('[') + self.src.txt + lime(']'))
+        logger.info(lime('└───►') + lime('[') + self.dst.txt + lime(']'))
 
     def apply(self):
         try:
-            return CopyCommand(self.src.path, self.dst.path)()
+            return CopyCommand(self.src, self.dst)()
         except Exception as e:
             logger.error(e)
             return False
@@ -354,12 +198,12 @@ class RenameAction(FSAction):
         else:
             for idx, target in enumerate(self.targets):
                 logger.info(yellow('Rename:' + ('┌─' if idx == 0 else '└►')) +
-                            yellow('[') + target + yellow(']'))
+                            yellow('[') + target.txt + yellow(']'))
 
     def apply(self):
         try:
             for src, dst in list(zip(self.targets, self.targets[1:]))[::-1]:
-                return MoveCommand(src.path, dst.path)()
+                return MoveCommand(src, dst)()
 
         except Exception as e:
             logger.error(e)
@@ -380,7 +224,6 @@ class RotateRenameAction(RenameAction):
                     arrow = '└───'
                 else:
                     arrow = '│ └►'
-
                 logger.info(yellow('Rotate:' + arrow) + yellow('[') + target.txt + yellow(']'))
 
     def apply(self):
@@ -396,18 +239,11 @@ class RotateRenameAction(RenameAction):
             mv_list = []
             mv_list.append((self.targets[-1], tmpdst))
             for src, dst in list(zip(self.targets, self.targets[1:]))[::-1]:
-                mv_list.append((src.path, dst.path))
+                mv_list.append((src, dst))
             mv_list.append((tmpdst, self.targets[0]))
 
             for src, dst in mv_list:
-                if not dst.parent.exists():
-                    logger.cmd(['mkdir', '-p', dst.parent])
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-
-                logger.cmd(['mv', src, dst])
-                src.rename(dst)
-
-                rmdir_p(src)
+                MoveCommand(src, dst)()
 
         except Exception as e:
             logger.error(e)
@@ -430,16 +266,47 @@ class RelinkAction(FSAction):
 
     def apply(self):
         try:
-            return RelinkCommand(self.src.path, self.dst.path)()
-
+            return RelinkCommand(self.src, self.dst)()
         except Exception as e:
             logger.error(e)
             return False
 
 
 class CompressAction(FSAction):
-    pass
+    def __init__(self, *targets, keep=True):
+        super().__init__(*targets)
+        self.keep = keep
+        self.cmd = None
+
+    def preview(self):
+        color = lime if self.keep else yellow
+        logger.info(color('Compress:') + color('[') + self.src.txt + color(']'))
+        logger.info(color('└───────►') + color('[') + self.dst.txt + color(']'))
+        self.cmd = CompressCommand(self.src, self.dst, self.keep)
+
+    def apply(self):
+        try:
+            return self.cmd()
+        except Exception as e:
+            logger.error(e)
+            return False
 
 
 class UncompressAction(FSAction):
-    pass
+    def __init__(self, *targets, keep=True):
+        super().__init__(*targets)
+        self.keep = keep
+        self.cmd = None
+
+    def preview(self):
+        color = lime if self.keep else yellow
+        logger.info(color('Extract:') + color('[') + self.src.txt + color(']'))
+        logger.info(color('└──────►') + color('[') + self.dst.txt + color(']'))
+        self.cmd = UncompressCommand(self.src, self.dst, keep=self.keep)
+
+    def apply(self):
+        try:
+            return self.cmd()
+        except Exception as e:
+            logger.error(e)
+            return False

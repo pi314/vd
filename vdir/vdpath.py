@@ -77,6 +77,9 @@ class VDPath:
             return self.path < other.path
         return self.txt < other
 
+    def __truediv__(self, other):
+        return VDPath(join(self.txt, other))
+
     @property
     def text(self):
         if not self.txt:
@@ -100,8 +103,20 @@ class VDPath:
     @property
     def realpath(self):
         if self.islink:
-            return str(self.path.parent.resolve() / self.path.name)
-        return str(self.path.resolve())
+            return VDPath(self.path.parent.resolve() / self.path.name)
+        return VDPath(self.path.resolve())
+
+    @property
+    def parent(self):
+        return VDPath(self.path.parent)
+
+    @property
+    def parents(self):
+        return [VDPath(p) for p in self.path.parents]
+
+    @property
+    def suffix(self):
+        return ''.join(self.path.suffixes)
 
     @property
     def exists(self):
@@ -128,16 +143,16 @@ class VDPath:
         return self.path.is_symlink()
 
     @property
-    def fullpath(self):
-        return self.path
-
-    @property
     def basename(self):
         return self.path.name
 
     @property
+    def name(self):
+        return self.path.name
+
+    @property
     def dirname(self):
-        return self.path.parent
+        return str(self.path.parent)
 
     @property
     def size(self):
@@ -181,14 +196,28 @@ class VDPath:
             if child.startswith('.') and not include_hidden:
                 continue
 
-            ret.append(child if not self.txt
-                    else join(self.text, child)
-                    )
+            ret.append(child
+                       if not self.txt
+                       else (self / child))
 
         if not ret:
             ret = ['.'] if not self.txt else [self.text]
 
         return ret
+
+    def mkdir(self):
+        self.path.mkdir(parents=True, exist_ok=True)
+
+    def unlink(self):
+        self.path.unlink()
+
+    def rename(self, dst):
+        self.path.rename(dst.path)
+
+    def symlink_to(self, ref):
+        if isinstance(ref, VDPath):
+            ref = ref.path
+        self.path.symlink_to(ref)
 
     def resolve(self):
         return VDPath(self.path.resolve())

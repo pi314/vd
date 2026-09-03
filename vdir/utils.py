@@ -21,18 +21,6 @@ def uniq(lst):
     return ret
 
 
-def gen_tmp_file_name(path, postfix='.vdtmp'):
-    import time
-    now = time.time()
-    tmp_file_name = '{orig_path}{postfix}[{getpid}].{timestamp}'.format(
-            orig_path=path.lstrip('/'),
-            postfix=postfix,
-            timestamp=now,
-            getpid=os.getpid(),
-            )
-    return Path(tmp_file_name)
-
-
 def fancy_diff_strings(a, b):
     import collections
     import unicodedata
@@ -92,3 +80,19 @@ def fancy_diff_strings(a, b):
         return (diff_oneline, None)
 
     return (diff_compact_A, diff_compact_B)
+
+
+def ls_colors(key=None):
+    def kv(entry):
+        entry = entry.split('=')
+        return entry[0], color('\033[' + entry[1] + 'm')
+
+    eza_colors = os.environ.get('EZA_COLORS', '')
+    ls_colors = os.environ.get('LS_COLORS', '')
+    ret = dict(kv(entry)
+               for entry in (eza_colors + ls_colors).split(':'))
+
+    if key:
+        return ret.get(key, color())
+
+    return ret
